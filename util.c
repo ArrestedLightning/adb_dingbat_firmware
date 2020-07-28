@@ -68,6 +68,55 @@ void UART0Send(unsigned char b)
 	TI = 1;
 }
 
+void initUART1(unsigned long baud)
+{
+	// Allow access to RBR, THR, IER, ADR
+	SER1_LCR =  0;
+
+	// set pin mode, RXD->P2.6 TXD->P2.7
+	SER1_IER = bIER_PIN_MOD1;
+
+	// Allow access to Baudrate control register
+	SER1_LCR = bLCR_DLAB;
+
+	// set baudrate divisor
+	SER1_DIV = 4;
+	unsigned short div = (FREQ_SYS / 8) / SER1_DIV / baud + 1;
+
+	SER1_DLL = div & 0xFF; 
+	SER1_DLM = (div >> 8) & 0xFF; 
+
+	// enable FIFO
+	SER1_FCR = bFCR_FIFO_EN;
+
+	// set data format: 8bit, none, 1bit
+	// Allow access to RBR, THR, IER, ADR
+	SER1_LCR = 0x03;
+}
+
+unsigned char UART1Receive()
+{
+	// Wait data available
+	while (!(SER1_LSR & bLSR_DATA_RDY))
+	{
+		continue;
+	}
+
+	return SER1_RBR;
+}
+
+void UART1Send(unsigned char b)
+{
+	// Wait FIFO empty
+	while (!(SER1_LSR & bLSR_T_FIFO_EMP))
+	{
+		continue;
+	}
+
+	// Send to FIFO
+	SER1_THR = b;
+}
+
 /**
 * #define PIN_MODE_INPUT 0
 * #define PIN_MODE_INPUT_PULLUP 1

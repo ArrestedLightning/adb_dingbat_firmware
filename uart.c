@@ -32,42 +32,44 @@ void processUart(){
         }
 }
 
+#define sendByte(b) UART1Send(b)
+
 void sendProtocolMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer){
     unsigned short i;
-    putchar(0xFE);	
-	putchar(length);
-	putchar((unsigned char)(length>>8));
-	putchar(msgtype);
-	putchar(type);
-	putchar(device);
-	putchar(endpoint);
-	putchar(0);
-	putchar(0);
-	putchar(0);
-	putchar(0);
+    UART1Send(0xFE);	
+	UART1Send(length);
+	UART1Send((unsigned char)(length>>8));
+	UART1Send(msgtype);
+	UART1Send(type);
+	UART1Send(device);
+	UART1Send(endpoint);
+	UART1Send(0);
+	UART1Send(0);
+	UART1Send(0);
+	UART1Send(0);
 	for (i = 0; i < length; i++)
 	{
-		putchar(msgbuffer[i]);
+		UART1Send(msgbuffer[i]);
 	}
-	putchar('\n');
+	UART1Send('\n');
 }
 
 void sendHidPollMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer,unsigned char idVendorL,unsigned char idVendorH,unsigned char idProductL,unsigned char idProductH){
     unsigned short i;
-    putchar(0xFE);	
-	putchar(length);
-	putchar((unsigned char)(length>>8));
-	putchar(msgtype);
-	putchar(type);
-	putchar(device);
-	putchar(endpoint);
-	putchar(idVendorL);
-	putchar(idVendorH);
-	putchar(idProductL);
-	putchar(idProductH);
+    UART1Send(0xFE);	
+	UART1Send(length);
+	UART1Send((unsigned char)(length>>8));
+	UART1Send(msgtype);
+	UART1Send(type);
+	UART1Send(device);
+	UART1Send(endpoint);
+	UART1Send(idVendorL);
+	UART1Send(idVendorH);
+	UART1Send(idProductL);
+	UART1Send(idProductH);
 	for (i = 0; i < length; i++)
 	{
-		putchar(msgbuffer[i]);
+		UART1Send(msgbuffer[i]);
 	}
-	putchar('\n');
+	UART1Send('\n');
 }

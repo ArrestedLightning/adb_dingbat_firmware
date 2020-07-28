@@ -18,10 +18,10 @@ SDCC\bin\packihx %project_name%.ihx > %project_name%.hex
 
 SDCC\bin\hex2bin -c %project_name%.hex
 
-del %project_name%.lk
-del %project_name%.map
-del %project_name%.mem
-del %project_name%.ihx
+REM del %project_name%.lk
+REM del %project_name%.map
+REM del %project_name%.mem
+REM del %project_name%.ihx
 
 del *.asm
 del *.lst

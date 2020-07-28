@@ -1,7 +1,7 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 #include <stdio.h>
-#if 0
+#if 1
 #define DEBUG_OUT(...) printf(__VA_ARGS__);
 #else
 #define DEBUG_OUT(...) (void)0;
@@ -13,6 +13,9 @@ void delay(unsigned short n);
 void initUART0(unsigned long baud, int alt);
 unsigned char UART0Receive();
 void UART0Send(unsigned char b);
+void initUART1(unsigned long baud);
+unsigned char UART1Receive();
+void UART1Send(unsigned char b);
 
 #define PIN_MODE_INPUT 0
 #define PIN_MODE_INPUT_PULLUP 1
