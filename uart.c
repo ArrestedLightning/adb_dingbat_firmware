@@ -34,42 +34,66 @@ void processUart(){
 
 #define sendByte(b) UART1Send(b)
 
+#define END 0xC0
+#define ESC 0xDB
+#define ESC_END 0xDC
+#define ESC_ESC 0xDD
+
+void SendSLIP(uint8_t b)
+{
+	switch (b)
+	{
+	case END:
+		sendByte(ESC);
+		sendByte(ESC_END);
+		break;
+	case ESC:
+		sendByte(ESC);
+		sendByte(ESC_ESC);
+		break;
+
+	default:
+		sendByte(b);
+		break;
+	}
+}
+
+#define SendSLIPEnd() sendByte(END)
+
 void sendProtocolMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer){
     unsigned short i;
-    UART1Send(0xFE);	
-	UART1Send(length);
-	UART1Send((unsigned char)(length>>8));
-	UART1Send(msgtype);
-	UART1Send(type);
-	UART1Send(device);
-	UART1Send(endpoint);
-	UART1Send(0);
-	UART1Send(0);
-	UART1Send(0);
-	UART1Send(0);
+	SendSLIP(length);
+	SendSLIP((unsigned char)(length>>8));
+	SendSLIP(msgtype);
+	SendSLIP(type);
+	SendSLIP(device);
+	SendSLIP(endpoint);
+	SendSLIP(0);
+	SendSLIP(0);
+	SendSLIP(0);
+	SendSLIP(0);
 	for (i = 0; i < length; i++)
 	{
-		UART1Send(msgbuffer[i]);
+		SendSLIP(msgbuffer[i]);
 	}
-	UART1Send('\n');
+	SendSLIPEnd();
 }
 
 void sendHidPollMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer,unsigned char idVendorL,unsigned char idVendorH,unsigned char idProductL,unsigned char idProductH){
     unsigned short i;
-    UART1Send(0xFE);	
-	UART1Send(length);
-	UART1Send((unsigned char)(length>>8));
-	UART1Send(msgtype);
-	UART1Send(type);
-	UART1Send(device);
-	UART1Send(endpoint);
-	UART1Send(idVendorL);
-	UART1Send(idVendorH);
-	UART1Send(idProductL);
-	UART1Send(idProductH);
+	SendSLIP(length);
+	SendSLIP((unsigned char)(length>>8));
+	SendSLIP(msgtype);
+	SendSLIP(type);
+	SendSLIP(device);
+	SendSLIP(endpoint);
+	SendSLIP(idVendorL);
+	SendSLIP(idVendorH);
+	SendSLIP(idProductL);
+	SendSLIP(idProductH);
 	for (i = 0; i < length; i++)
 	{
-		UART1Send(msgbuffer[i]);
+		SendSLIP(msgbuffer[i]);
 	}
-	UART1Send('\n');
+	SendSLIPEnd();
 }

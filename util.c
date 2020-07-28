@@ -80,8 +80,8 @@ void initUART1(unsigned long baud)
 	SER1_LCR = bLCR_DLAB;
 
 	// set baudrate divisor
-	SER1_DIV = 4;
-	unsigned short div = (FREQ_SYS / 8) / SER1_DIV / baud + 1;
+	SER1_DIV = 1;
+	unsigned short div = (FREQ_SYS / 8) / SER1_DIV / baud;
 
 	SER1_DLL = div & 0xFF; 
 	SER1_DLM = (div >> 8) & 0xFF; 
