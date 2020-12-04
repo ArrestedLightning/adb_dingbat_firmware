@@ -29,7 +29,10 @@ void main()
     while(1)
     {
         if(!(P4_IN & (1 << 6)))
+        {
+            uninitClock();
             runBootloader();
+        }
         processUart();
         s = checkRootHubConnections();
         pollHIDdevice();

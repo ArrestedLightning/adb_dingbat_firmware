@@ -23,8 +23,16 @@ void processUart(){
                 if(uartRxBuff[0]=='k'){
                 //if(uartRxBuff[1]==0x61)LED=0;
                 //if(uartRxBuff[1]==0x73)LED=1;
-                if(uartRxBuff[1]=='b')runBootloader();
-                }
+					if(uartRxBuff[1]=='b'){
+						uninitClock();
+						runBootloader();
+					}
+					else if(uartRxBuff[1]=='r'){
+						SAFE_MOD = 0x55;
+						SAFE_MOD = 0xaa;
+						GLOBAL_CFG |= bSW_RESET;
+					}
+				}
             rxPos=0;
             }else{
             rxPos++;
@@ -32,7 +40,7 @@ void processUart(){
         }
 }
 
-#define sendByte(b) UART1Send(b)
+#define sendByte(b) UART0Send(b)
 
 #define END 0xC0
 #define ESC 0xDB

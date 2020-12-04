@@ -21,6 +21,19 @@ void initClock()
 	delay(7);
 }
 
+void uninitClock()
+{
+    SAFE_MOD = 0x55;
+    SAFE_MOD = 0xAA;
+
+	CLOCK_CFG = (1 << 7) | (0b11000); 															  
+	PLL_CFG = 0b11011000;
+
+    SAFE_MOD = 0xFF;
+
+	delay(7);
+}
+
 /**
  * Initialize UART0 port with given boud rate
  * pins: tx = P3.1 rx = P3.0
@@ -63,9 +76,9 @@ unsigned char UART0Receive()
 
 void UART0Send(unsigned char b)
 {
-	SBUF = b;
-	while(TI == 0);
-	TI = 1;
+	while (!TI);
+    TI = 0;
+    SBUF = b;
 }
 
 void initUART1(unsigned long baud)
@@ -188,17 +201,12 @@ unsigned char digitalRead(unsigned char port, unsigned char pin)
 
 int putchar(int c)
 {
-    while (!TI);
-    TI = 0;
-    SBUF = c & 0xFF;
-    return c;
+	UART1Send(c);
 }
 
 int getchar() 
 {
-    while(!RI);
-    RI = 0;
-    return SBUF;
+	return UART1Receive();
 }
 
 /*******************************************************************************

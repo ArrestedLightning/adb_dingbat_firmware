@@ -7,9 +7,11 @@
 #define DEBUG_OUT(...) (void)0;
 #endif
 
+void uninitClock();
 void initClock();
 void delayUs(unsigned short n);
 void delay(unsigned short n);
+void uninitUART0();
 void initUART0(unsigned long baud, int alt);
 unsigned char UART0Receive();
 void UART0Send(unsigned char b);
