@@ -17,6 +17,7 @@ __code unsigned char SetupSetUsbConfig[] = { USB_REQ_TYP_OUT, USB_SET_CONFIGURAT
 
 __code unsigned char  SetHIDIdleRequest[] = {USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, HID_SET_IDLE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 __code unsigned char  GetHIDReport[] = {USB_REQ_TYP_IN | USB_REQ_RECIP_INTERF, USB_GET_DESCRIPTOR, 0x00, USB_DESCR_TYP_REPORT, 0 /*interface*/, 0x00, 0xff, 0x00};
+__code unsigned char  SetHIDReport[] = {USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, USB_SET_CONFIGURATION, 0, 0x02, 0, 0, 0, 0};
 
 __at(0x0000) unsigned char __xdata RxBuffer[MAX_PACKET_SIZE];
 __at(0x0100) unsigned char __xdata TxBuffer[MAX_PACKET_SIZE];
@@ -557,6 +558,32 @@ void pollHIDdevice()
 		}
 		}
 	}
+}
+
+void sendHidOutReport(uint8_t device, uint8_t dat)
+{
+	uint8_t s;
+
+	fillTxBuffer(SetHIDReport, sizeof(SetHIDReport));
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[device].interface;
+	((PXUSB_SETUP_REQ)TxBuffer)->wLengthL = 1;
+	// TxBuffer[sizeof(SetHIDReport)] = dat;
+    // s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);             
+
+	delayUs(200);
+	UH_TX_LEN = sizeof(USB_SETUP_REQ);
+	s = hostTransfer((unsigned char)(USB_PID_SETUP << 4), 0, 10000);
+	if (s != ERR_SUCCESS)
+		return;
+
+	TxBuffer[0] = dat;
+	UH_TX_LEN = 1;
+	s = hostTransfer((unsigned char)(USB_PID_OUT << 4), UH_TX_CTRL, 10000);
+	// UH_TX_LEN = 0;
+    // s = hostTransfer(USB_PID_OUT << 4, bUH_R_TOG | bUH_T_TOG, 10000);
+
+	// uint8_t msg[] = {device, dat, s};
+	// sendProtocolMSG(MSG_TYPE_ERROR, 3, 0, 0, 0, msg);
 }
 
 

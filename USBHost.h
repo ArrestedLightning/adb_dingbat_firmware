@@ -106,5 +106,6 @@ unsigned char checkRootHubConnections();
 
 void resetHubDevices(unsigned char hubindex);
 void pollHIDdevice();
+void sendHidOutReport(uint8_t ep, uint8_t dat);
 
 #endif
