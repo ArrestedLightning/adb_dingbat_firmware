@@ -20,6 +20,9 @@ __code unsigned char  GetHIDReport[] = {USB_REQ_TYP_IN | USB_REQ_RECIP_INTERF, U
 __code unsigned char  SetHIDReport[] = {USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, USB_SET_CONFIGURATION, 0, 0x02, 0, 0, 0, 0};
 
 __code unsigned char GetHubDescriptor[] = 	{USB_REQ_TYP_IN | USB_REQ_TYP_CLASS | USB_REQ_RECIP_DEVICE, USB_GET_DESCRIPTOR, 0, USB_DESCR_TYP_HUB, 0, 0, sizeof(USB_DEV_DESCR), 0};
+__code unsigned char GetHubStatus[] = 	{USB_REQ_TYP_IN | USB_REQ_TYP_CLASS | USB_REQ_RECIP_OTHER, USB_GET_STATUS, 0, 0, 0, 0, 4, 0};
+__code unsigned char SetHubFeature[] = 	{USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_OTHER, USB_SET_FEATURE, 0, 0, 0, 0, 0, 0};
+__code unsigned char ClearHubFeature[] = 	{USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_OTHER, USB_CLEAR_FEATURE, 0, 0, 0, 0, 0, 0};
 
 __at(0x0000) unsigned char __xdata RxBuffer[MAX_PACKET_SIZE];
 __at(0x0100) unsigned char __xdata TxBuffer[MAX_PACKET_SIZE];
@@ -962,24 +965,60 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 	return s;
 }
 
+static void dumpRxBuffer(unsigned char len)
+{
+	unsigned char i;
+	for (i = 0; i < len; i++)
+	{
+		DEBUG_OUT("0x%02X ", (uint16_t)(receiveDataBuffer[i]));
+	}
+	DEBUG_OUT("\n");
+}
+
 static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 {
-	unsigned char s, i;
+	unsigned char s, i, portNum;
 	unsigned short len;
 
-	DEBUG_OUT("Get HUB descriptor\n");
+	DEBUG_OUT("-----Get HUB descriptor-----\n");
 	fillTxBuffer(GetHubDescriptor, sizeof(GetHubDescriptor));
 	s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
 	if (s != ERR_SUCCESS)
 	{
 		return s;
 	}
+	dumpRxBuffer(len);
 
-	for (i = 0; i < len; i++)
+	portNum = receiveDataBuffer[2];
+
+	DEBUG_OUT("-----Turn on ports-----\n");
+	for (i=0; i<portNum; i++)
 	{
-		DEBUG_OUT("0x%02X ", (uint16_t)(receiveDataBuffer[i]));
+		DEBUG_OUT("port:%d\n", i);
+		fillTxBuffer(SetHubFeature, sizeof(SetHubFeature));
+		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = i + 1;
+		((PXUSB_SETUP_REQ)TxBuffer)->wValueL = HUB_PORT_POWER;
+		s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+		if (s != ERR_SUCCESS)
+		{
+			return s;
+		}
 	}
-	DEBUG_OUT("\n");
+
+	DEBUG_OUT("-----Clear port connection Info-----\n");
+	for (i=0; i<portNum; i++)
+	{
+		DEBUG_OUT("port:%d\n", i);
+		fillTxBuffer(ClearHubFeature, sizeof(ClearHubFeature));
+		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = i + 1;
+		((PXUSB_SETUP_REQ)TxBuffer)->wValueL = HUB_C_PORT_CONNECTION;
+		s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+		if (s != ERR_SUCCESS)
+		{
+			return s;
+		}
+
+	}
 
 	return s;
 }
