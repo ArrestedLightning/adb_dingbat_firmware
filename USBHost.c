@@ -520,6 +520,7 @@ struct
 {
 	unsigned char connected;
 	unsigned char rootHub;
+	unsigned char port;
 	unsigned char interface;
 	unsigned char endPoint;
 	unsigned long type;
@@ -558,7 +559,7 @@ void pollHIDdevice()
 	for (hiddevice = 0; hiddevice < MAX_HID_DEVICES; hiddevice++)
 	{
 		if(HIDdevice[hiddevice].connected){
-		selectHubPort(HIDdevice[hiddevice].rootHub, 0);
+		selectHubPort(HIDdevice[hiddevice].rootHub, HIDdevice[hiddevice].port);
 		s = hostTransfer( USB_PID_IN << 4 | HIDdevice[hiddevice].endPoint & 0x7F, HIDdevice[hiddevice].endPoint & 0x80 ? bUH_R_TOG | bUH_T_TOG : 0, 0 );
 		if ( s == ERR_SUCCESS )
    		{
@@ -926,6 +927,7 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 									HIDdevice[hiddevice].connected = 1;
 									HIDdevice[hiddevice].interface = currentInterface->bInterfaceNumber;
 									HIDdevice[hiddevice].rootHub = rootHubIndex;
+									HIDdevice[hiddevice].port = portIndex;
 									DEBUG_OUT("Got endpoint for the HIDdevice 0x%02x\n", HIDdevice[hiddevice].endPoint);
 									getHIDDeviceReport(hiddevice);
 								}
