@@ -19,6 +19,8 @@ __code unsigned char  SetHIDIdleRequest[] = {USB_REQ_TYP_CLASS | USB_REQ_RECIP_I
 __code unsigned char  GetHIDReport[] = {USB_REQ_TYP_IN | USB_REQ_RECIP_INTERF, USB_GET_DESCRIPTOR, 0x00, USB_DESCR_TYP_REPORT, 0 /*interface*/, 0x00, 0xff, 0x00};
 __code unsigned char  SetHIDReport[] = {USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, USB_SET_CONFIGURATION, 0, 0x02, 0, 0, 0, 0};
 
+__code unsigned char GetHubDescriptor[] = 	{USB_REQ_TYP_IN | USB_REQ_TYP_CLASS | USB_REQ_RECIP_DEVICE, USB_GET_DESCRIPTOR, 0, USB_DESCR_TYP_HUB, 0, 0, sizeof(USB_DEV_DESCR), 0};
+
 __at(0x0000) unsigned char __xdata RxBuffer[MAX_PACKET_SIZE];
 __at(0x0100) unsigned char __xdata TxBuffer[MAX_PACKET_SIZE];
 
@@ -28,12 +30,16 @@ unsigned char SetPort = 0;	//todo really global?
 #define RECEIVE_BUFFER_LEN    512
 __xdata unsigned char receiveDataBuffer[RECEIVE_BUFFER_LEN];
 
-struct _RootHubDevice
+typedef struct _UsbHubDevice
 {
+	// Information of connected device on each port
 	unsigned char status;
 	unsigned char address;
 	unsigned char speed;
-} __xdata rootHubDevice[ROOT_HUB_COUNT];
+	unsigned char deviceClass;
+} UsbHubDevice;
+__xdata UsbHubDevice rootHubDevice[ROOT_HUB_COUNT];
+__xdata UsbHubDevice usbHubDevice[ROOT_HUB_COUNT][MAX_ENDPOINT_COUNT];
 
 void disableRootHubPort(unsigned char index)
 {
@@ -146,9 +152,15 @@ unsigned char enableRootHubPort(unsigned char rootHubIndex)
 
 void selectHubPort(unsigned char rootHubIndex, unsigned char HubPortIndex)
 {
-	unsigned char temp = HubPortIndex;
+	if (HubPortIndex == EXHUB_PORT_NONE) {
         setHostUsbAddr(rootHubDevice[rootHubIndex].address); //todo ever != 0
         setUsbSpeed(rootHubDevice[rootHubIndex].speed); //isn't that set before?
+	}
+	else
+	{
+        setHostUsbAddr(usbHubDevice[rootHubIndex][HubPortIndex].address);
+        setUsbSpeed(usbHubDevice[rootHubIndex][HubPortIndex].speed);
+	}
 }
 
 unsigned char hostTransfer(unsigned char endp_pid, unsigned char tog, unsigned short timeout )
@@ -795,6 +807,183 @@ void readEndpoint()
 {
 }
 
+unsigned char calcDeviceAddress(unsigned char rootHubIndex, unsigned char portIndex)
+{
+	if (portIndex == EXHUB_PORT_NONE)
+	{
+		return ((rootHubIndex << 7) | (EXHUB_PORT_NONE & 0x7F));
+	}
+	else
+	{
+		return ((rootHubIndex << 7) | portIndex) + 1;
+	}
+}
+
+static UsbHubDevice * getUsbHubPort(unsigned char rootHubIndex, unsigned char portIndex)
+{
+	if (portIndex == EXHUB_PORT_NONE)
+	{
+		return &rootHubDevice[rootHubIndex];
+	}
+	else
+	{
+		return &usbHubDevice[rootHubIndex][portIndex];
+	}
+}
+
+unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portIndex)
+{
+	unsigned char s = ERR_SUCCESS, cfg, dv_cls, addr;
+	unsigned char HIDDevice = 0;
+	selectHubPort(rootHubIndex, portIndex);
+	DEBUG_OUT("root hub port %i enabled\n", rootHubIndex);
+	s = getDeviceDescriptor();
+
+	if (s == ERR_SUCCESS)
+	{
+		UsbHubDevice * device = getUsbHubPort(rootHubIndex, portIndex);
+		dv_cls = ((PXUSB_DEV_DESCR)receiveDataBuffer)->bDeviceClass;
+		DEBUG_OUT("Device class %i\n", dv_cls);
+		device->deviceClass = dv_cls;
+		DEBUG_OUT("Max packet size %i\n", ((PXUSB_DEV_DESCR)receiveDataBuffer)->bMaxPacketSize0);
+		if (portIndex == EXHUB_PORT_NONE)
+		{
+			VendorProductID[rootHubIndex].idVendorL = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idVendorL;
+			VendorProductID[rootHubIndex].idVendorH = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idVendorH;
+			VendorProductID[rootHubIndex].idProductL = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idProductL;
+			VendorProductID[rootHubIndex].idProductH = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idProductH;
+		}
+		DEBUG_OUT_USB_BUFFER(receiveDataBuffer);
+		addr = calcDeviceAddress(rootHubIndex, portIndex);
+		s = setUsbAddress(addr);
+		if (s == ERR_SUCCESS)
+		{
+			device->address = addr;
+			// s = getDeviceString();
+			{
+				DEBUG_OUT_USB_BUFFER(receiveDataBuffer);
+				if (convertStringDescriptor(receiveDataBuffer, receiveDataBuffer, RECEIVE_BUFFER_LEN, rootHubIndex))
+				{
+					DEBUG_OUT("Device String: %s\n", receiveDataBuffer);
+				}
+				s = getConfigurationDescriptor();
+				if (s == ERR_SUCCESS)
+				{
+					sendProtocolMSG(MSG_TYPE_DEVICE_INFO, (receiveDataBuffer[2] + (receiveDataBuffer[3] << 8)), addr, rootHubIndex + 1, 0xAA, receiveDataBuffer);
+					unsigned short i, total;
+					unsigned char __xdata temp[512];
+					PXUSB_ITF_DESCR currentInterface = 0;
+					int interfaces;
+					//DEBUG_OUT_USB_BUFFER(receiveDataBuffer);
+					for (i = 0; i < receiveDataBuffer[2] + (receiveDataBuffer[3] << 8); i++)
+					{
+						DEBUG_OUT("0x%02X ", (uint16_t)(receiveDataBuffer[i]));
+					}
+					DEBUG_OUT("\n");
+
+					cfg = ((PXUSB_CFG_DESCR)receiveDataBuffer)->bConfigurationValue;
+					DEBUG_OUT("Configuration value: %d\n", cfg);
+
+					interfaces = ((PXUSB_CFG_DESCR_LONG)receiveDataBuffer)->cfg_descr.bNumInterfaces;
+					DEBUG_OUT("Interface count: %d\n", interfaces);
+
+					s = setUsbConfig(cfg);
+					//parse descriptors
+					total = ((PXUSB_CFG_DESCR)receiveDataBuffer)->wTotalLengthL + (((PXUSB_CFG_DESCR)receiveDataBuffer)->wTotalLengthH << 8);
+					for (i = 0; i < total; i++)
+						temp[i] = receiveDataBuffer[i];
+					i = ((PXUSB_CFG_DESCR)receiveDataBuffer)->bLength;
+					while (i < total)
+					{
+						unsigned char __xdata *desc = &(temp[i]);
+						switch (desc[1])
+						{
+						case USB_DESCR_TYP_INTERF:
+							DEBUG_OUT("Interface descriptor found\n", desc[1]);
+							//DEBUG_OUT_USB_BUFFER(desc);
+							currentInterface = ((PXUSB_ITF_DESCR)desc);
+							readInterface(rootHubIndex, currentInterface);
+							break;
+						case USB_DESCR_TYP_ENDP:
+							DEBUG_OUT("Endpoint descriptor found\n", desc[1]);
+							DEBUG_OUT_USB_BUFFER(desc);
+							if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HID)
+							{
+								PXUSB_ENDP_DESCR d = (PXUSB_ENDP_DESCR)desc;
+								if (d->bEndpointAddress & 0x80)
+								{
+									unsigned char hiddevice;
+									for (hiddevice = 0; hiddevice < MAX_HID_DEVICES; hiddevice++)
+									{
+										if (HIDdevice[hiddevice].connected == 0)
+											break;
+									}
+									DEBUG_OUT("Connected device at position: %i\n", hiddevice);
+									HIDdevice[hiddevice].endPoint = d->bEndpointAddress;
+									HIDdevice[hiddevice].connected = 1;
+									HIDdevice[hiddevice].interface = currentInterface->bInterfaceNumber;
+									HIDdevice[hiddevice].rootHub = rootHubIndex;
+									DEBUG_OUT("Got endpoint for the HIDdevice 0x%02x\n", HIDdevice[hiddevice].endPoint);
+									getHIDDeviceReport(hiddevice);
+								}
+							}
+							break;
+						case USB_DESCR_TYP_HID:
+							DEBUG_OUT("HID descriptor found\n", desc[1]);
+							//DEBUG_OUT_USB_BUFFER(desc);
+							if (currentInterface == 0)
+								break;
+							readHIDInterface(currentInterface, (PXUSB_HID_DESCR)desc);
+							break;
+						case USB_DESCR_TYP_CS_INTF:
+							DEBUG_OUT("Class specific header descriptor found\n", desc[1]);
+							DEBUG_OUT_USB_BUFFER(desc);
+							//if(currentInterface == 0) break;
+							//readHIDInterface(currentInterface, (PXUSB_HID_DESCR)desc);
+							break;
+						case USB_DESCR_TYP_CS_ENDP:
+							DEBUG_OUT("Class specific endpoint descriptor found\n", desc[1]);
+							DEBUG_OUT_USB_BUFFER(desc);
+							//if(currentInterface == 0) break;
+							//readHIDInterface(currentInterface, (PXUSB_HID_DESCR)desc);
+							break;
+						default:
+							DEBUG_OUT("Unexpected descriptor type: %02X\n", desc[1]);
+							DEBUG_OUT_USB_BUFFER(desc);
+						}
+						i += desc[0];
+					}
+					return ERR_SUCCESS;
+				}
+			}
+		}
+	}
+
+	return s;
+}
+
+static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
+{
+	unsigned char s, i;
+	unsigned short len;
+
+	DEBUG_OUT("Get HUB descriptor\n");
+	fillTxBuffer(GetHubDescriptor, sizeof(GetHubDescriptor));
+	s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+	if (s != ERR_SUCCESS)
+	{
+		return s;
+	}
+
+	for (i = 0; i < len; i++)
+	{
+		DEBUG_OUT("0x%02X ", (uint16_t)(receiveDataBuffer[i]));
+	}
+	DEBUG_OUT("\n");
+
+	return s;
+}
+
 unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 {
 	unsigned char retry, i, s = ERR_SUCCESS, cfg, dv_cls, addr;
@@ -819,121 +1008,18 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 			continue;
 		}
 
-		selectHubPort(rootHubIndex, 0);
-		DEBUG_OUT("root hub port %i enabled\n", rootHubIndex);
-		s = getDeviceDescriptor();
-                              
-		if ( s == ERR_SUCCESS )
+		s = enumerateUsbDevice(rootHubIndex, EXHUB_PORT_NONE);
+		if (s == ERR_SUCCESS)
 		{
-			dv_cls = ((PXUSB_DEV_DESCR)receiveDataBuffer)->bDeviceClass;
-			DEBUG_OUT( "Device class %i\n", dv_cls);
-			DEBUG_OUT( "Max packet size %i\n", ((PXUSB_DEV_DESCR)receiveDataBuffer)->bMaxPacketSize0);
-    		VendorProductID[rootHubIndex].idVendorL = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idVendorL;
-    		VendorProductID[rootHubIndex].idVendorH = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idVendorH;
-    		VendorProductID[rootHubIndex].idProductL = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idProductL;
-    		VendorProductID[rootHubIndex].idProductH = ((PXUSB_DEV_DESCR)receiveDataBuffer)->idProductH;
-			DEBUG_OUT_USB_BUFFER(receiveDataBuffer);
-			addr = rootHubIndex + ((PUSB_SETUP_REQ)SetUSBAddressRequest)->wValueL; //todo wValue always 2.. does another id work?
-			s = setUsbAddress(addr);
-			if ( s == ERR_SUCCESS )
+			if (getUsbHubPort(rootHubIndex, EXHUB_PORT_NONE)->deviceClass == USB_DEV_CLASS_HUB)
 			{
-				rootHubDevice[rootHubIndex].address = addr;
-				s = getDeviceString();
-				{
-					DEBUG_OUT_USB_BUFFER(receiveDataBuffer);
-					if(convertStringDescriptor(receiveDataBuffer, receiveDataBuffer, RECEIVE_BUFFER_LEN,rootHubIndex))
-					{
-						DEBUG_OUT("Device String: %s\n", receiveDataBuffer);
-					}
-					s = getConfigurationDescriptor();
-					if ( s == ERR_SUCCESS )
-					{
-						sendProtocolMSG(MSG_TYPE_DEVICE_INFO, (receiveDataBuffer[2] + (receiveDataBuffer[3] << 8)), addr, rootHubIndex+1, 0xAA, receiveDataBuffer);
-						unsigned short i, total;
-						unsigned char __xdata temp[512];
-						PXUSB_ITF_DESCR currentInterface = 0;
-						int interfaces;
-						//DEBUG_OUT_USB_BUFFER(receiveDataBuffer);
-						for(i = 0; i < receiveDataBuffer[2] + (receiveDataBuffer[3] << 8); i++)
-						{
-							DEBUG_OUT("0x%02X ", (uint16_t)(receiveDataBuffer[i]));
-						}
-						DEBUG_OUT("\n");
-
-						cfg = ((PXUSB_CFG_DESCR)receiveDataBuffer)->bConfigurationValue;
-						DEBUG_OUT("Configuration value: %d\n", cfg);
-
-						interfaces = ((PXUSB_CFG_DESCR_LONG)receiveDataBuffer)->cfg_descr.bNumInterfaces;
-						DEBUG_OUT("Interface count: %d\n", interfaces);
-
-    					s = setUsbConfig( cfg ); 
-						//parse descriptors
-						total = ((PXUSB_CFG_DESCR)receiveDataBuffer)->wTotalLengthL + (((PXUSB_CFG_DESCR)receiveDataBuffer)->wTotalLengthH << 8);
-						for(i = 0; i < total; i++)
-							temp[i] = receiveDataBuffer[i];
-						i = ((PXUSB_CFG_DESCR)receiveDataBuffer)->bLength;
-						while(i < total)
-						{
-							unsigned char __xdata *desc = &(temp[i]);
-							switch(desc[1])
-							{
-								case USB_DESCR_TYP_INTERF:
-									DEBUG_OUT("Interface descriptor found\n", desc[1]);
-									//DEBUG_OUT_USB_BUFFER(desc);
-									currentInterface = ((PXUSB_ITF_DESCR)desc);
-									readInterface(rootHubIndex, currentInterface);
-									break;
-								case USB_DESCR_TYP_ENDP:
-									DEBUG_OUT("Endpoint descriptor found\n", desc[1]);
-									DEBUG_OUT_USB_BUFFER(desc);
-									if(currentInterface->bInterfaceClass == USB_DEV_CLASS_HID)
-									{
-										PXUSB_ENDP_DESCR d = (PXUSB_ENDP_DESCR)desc;
-										if(d->bEndpointAddress & 0x80){
-											unsigned char hiddevice;
-											for (hiddevice = 0; hiddevice < MAX_HID_DEVICES; hiddevice++)
-											{
-												if(HIDdevice[hiddevice].connected == 0)break;
-											}
-											DEBUG_OUT("Connected device at position: %i\n", hiddevice);
-											HIDdevice[hiddevice].endPoint = d->bEndpointAddress;
-											HIDdevice[hiddevice].connected = 1;										
-											HIDdevice[hiddevice].interface = currentInterface->bInterfaceNumber;
-											HIDdevice[hiddevice].rootHub = rootHubIndex;
-											DEBUG_OUT("Got endpoint for the HIDdevice 0x%02x\n", HIDdevice[hiddevice].endPoint);
-											getHIDDeviceReport(hiddevice);
-										}
-									}
-									break;
-								case USB_DESCR_TYP_HID:
-									DEBUG_OUT("HID descriptor found\n", desc[1]);
-									//DEBUG_OUT_USB_BUFFER(desc);
-									if(currentInterface == 0) break;
-									readHIDInterface(currentInterface, (PXUSB_HID_DESCR)desc);
-									break;
-								case USB_DESCR_TYP_CS_INTF:
-									DEBUG_OUT("Class specific header descriptor found\n", desc[1]);
-									DEBUG_OUT_USB_BUFFER(desc);
-									//if(currentInterface == 0) break;
-									//readHIDInterface(currentInterface, (PXUSB_HID_DESCR)desc);
-									break;
-								case USB_DESCR_TYP_CS_ENDP:
-									DEBUG_OUT("Class specific endpoint descriptor found\n", desc[1]);
-									DEBUG_OUT_USB_BUFFER(desc);
-									//if(currentInterface == 0) break;
-									//readHIDInterface(currentInterface, (PXUSB_HID_DESCR)desc);
-									break;
-								default:
-									DEBUG_OUT("Unexpected descriptor type: %02X\n", desc[1]);
-									DEBUG_OUT_USB_BUFFER(desc);
-							}
-							i += desc[0];
-						}
-						return ERR_SUCCESS;
-					}			
-				}
+				s = initializeUsbHubConnection(rootHubIndex);
 			}
+			if (s == ERR_SUCCESS)
+				return s;
 		}
+
+		// On error
 		DEBUG_OUT( "Error = %02X\n", s);
 		sendProtocolMSG(MSG_TYPE_ERROR,0, rootHubIndex+1, s, 0xEE, 0);
 		rootHubDevice[rootHubIndex].status = ROOT_DEVICE_FAILED;
