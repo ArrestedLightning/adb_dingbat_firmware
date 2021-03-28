@@ -100,6 +100,14 @@ typedef struct _UsbDevice
 	unsigned char   HubPortNum;
 } UsbDevice, *PUsbDevice;
 
+typedef struct _USB_HUB_STATUS {
+	unsigned char PortStatusL;
+	unsigned char PortStatusH;
+	unsigned char PortChangeL;
+	unsigned char PortChangeH;
+} USB_HUB_STATUS, *PUSB_HUB_STATUS;
+typedef USB_HUB_STATUS __xdata *PXUSB_HUB_STATUS;
+
 void resetRootHub(unsigned char i);
 void initUSB_Host();
 unsigned char checkRootHubConnections();

@@ -977,6 +977,40 @@ static void dumpRxBuffer(unsigned char len)
 	DEBUG_OUT("\n");
 }
 
+static unsigned char setHubFeature(unsigned char port, unsigned char value)
+{
+	unsigned char len;
+	fillTxBuffer(SetHubFeature, sizeof(SetHubFeature));
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = port + 1;
+	((PXUSB_SETUP_REQ)TxBuffer)->wValueL = value;
+	return hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+}
+
+static unsigned char clearHubFeature(unsigned char port, unsigned char value)
+{
+	unsigned char len;
+	fillTxBuffer(ClearHubFeature, sizeof(ClearHubFeature));
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = port + 1;
+	((PXUSB_SETUP_REQ)TxBuffer)->wValueL = value;
+	return hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+}
+
+static unsigned char getHubStatus(unsigned char port)
+{
+	unsigned char len;
+	fillTxBuffer(GetHubStatus, sizeof(GetHubStatus));
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = port + 1;
+	unsigned char s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+	dumpRxBuffer(len);
+	return s;
+}
+
+#define ASSERT_HUB_RESULT(x)  \
+	{                         \
+		if (x != ERR_SUCCESS) \
+			return x;         \
+	}
+
 static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 {
 	unsigned char s, i, portNum;
@@ -991,50 +1025,83 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 	}
 	dumpRxBuffer(len);
 
-	portNum = receiveDataBuffer[2];
+	portNum = ((PXUSB_HUB_DESCR)receiveDataBuffer)->bNbrPorts;
+
+	if (portNum > MAX_EXHUB_PORT_COUNT)
+	{
+		DEBUG_OUT("Port num(%d) exceeds limit(%d)\n", portNum, MAX_EXHUB_PORT_COUNT);
+		portNum = MAX_EXHUB_PORT_COUNT;
+	}
 
 	DEBUG_OUT("-----Turn on ports-----\n");
 	for (i = 0; i < portNum; i++)
 	{
 		DEBUG_OUT("port:%d\n", i);
-		fillTxBuffer(SetHubFeature, sizeof(SetHubFeature));
-		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = i + 1;
-		((PXUSB_SETUP_REQ)TxBuffer)->wValueL = HUB_PORT_POWER;
-		s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
-		if (s != ERR_SUCCESS)
-		{
-			return s;
-		}
+		s = setHubFeature(i, HUB_PORT_POWER);
+		ASSERT_HUB_RESULT(s);
 	}
 
 	DEBUG_OUT("-----Clear port connection Info-----\n");
 	for (i = 0; i < portNum; i++)
 	{
 		DEBUG_OUT("port:%d\n", i);
-		fillTxBuffer(ClearHubFeature, sizeof(ClearHubFeature));
-		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = i + 1;
-		((PXUSB_SETUP_REQ)TxBuffer)->wValueL = HUB_C_PORT_CONNECTION;
-		s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
-		if (s != ERR_SUCCESS)
-		{
-			return s;
-		}
-
+		s = clearHubFeature(i, HUB_C_PORT_CONNECTION);
+		ASSERT_HUB_RESULT(s);
 	}
 
 	for (i = 0; i < portNum; i++)
 	{
+		getUsbHubPort(rootHubIndex, i)->status = ROOT_DEVICE_FAILED;
+
 		DEBUG_OUT("-----Get port%d status-----\n", i);
 		delay(50);
 		selectHubPort(rootHubIndex, EXHUB_PORT_NONE);
-		fillTxBuffer(GetHubStatus, sizeof(GetHubStatus));
-		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = i + 1;
-		s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
-		if (s != ERR_SUCCESS)
+		s = getHubStatus(i);
+		ASSERT_HUB_RESULT(s);
+
+		// Should check connection event?
+		if (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusL & 0x01)
 		{
-			return s;
+			DEBUG_OUT("Devive is detected on port\n");
 		}
-		dumpRxBuffer(len);
+		else
+		{
+			DEBUG_OUT("No device is connectoed\n")
+			continue;
+		}
+
+		delay(100);
+
+		DEBUG_OUT("-----Reset port-----\n");
+		s = setHubFeature(i, HUB_PORT_RESET);
+		ASSERT_HUB_RESULT(s);
+
+		DEBUG_OUT("-----Assert Reset-----\n");
+		do
+		{
+			s = getHubStatus(i);
+			ASSERT_HUB_RESULT(s);
+			delay(1);
+		} while (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusL & 0x10);
+
+		if ((((PXUSB_HUB_STATUS)RxBuffer)->PortChangeL & 0x10))
+		{
+			DEBUG_OUT("Reset complete\n")
+			DEBUG_OUT("-----Clear reset-----\n")
+			s = clearHubFeature(i, HUB_C_PORT_RESET);
+			ASSERT_HUB_RESULT(s);
+		}
+		else
+		{
+			DEBUG_OUT("Reset failed\n")
+			continue;
+		}
+
+		DEBUG_OUT("-----Wake up from suspend-----\n");
+		s = clearHubFeature(i, HUB_PORT_SUSPEND);
+		ASSERT_HUB_RESULT(s);
+
+		delay(100);
 	}
 
 	return s;
@@ -1042,7 +1109,7 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 
 unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 {
-	unsigned char retry, i, s = ERR_SUCCESS, cfg, dv_cls, addr;
+	unsigned char retry, i, s = ERR_SUCCESS;
 	unsigned char HIDDevice = 0;
 
 	for(retry = 0; retry < 10; retry++) //todo test fewer retries
