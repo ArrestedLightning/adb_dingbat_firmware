@@ -6,6 +6,7 @@
 #include "util.h"
 #include "uart.h"
 #include "USBHost.h"
+#include "config.h"
 
 uint8_t __xdata uartRxBuff[64];
 uint8_t __xdata rxPos = 0;
@@ -18,11 +19,11 @@ void processUart(){
 		uartRxBuff[rxPos] = SBUF;
 		if (uartRxBuff[rxPos] == '\n' || rxPos >= 64)
 		{
-			for (uint8_t i = 0; i < rxPos; i++)
-			{
-				printf("0x%02X ", uartRxBuff[i]);
-			}
-			printf("\n");
+			// for (uint8_t i = 0; i < rxPos; i++)
+			// {
+			// 	printf("0x%02X ", uartRxBuff[i]);
+			// }
+			// printf("\n");
 			if (uartRxBuff[0] == 'k')
 			{
 				//if(uartRxBuff[1]==0x61)LED=0;
@@ -53,7 +54,11 @@ void processUart(){
 	}
 }
 
+#ifndef USB_PROTOCOL_DEBUG
 #define sendByte(b) UART0Send(b)
+#else
+#define sendByte(b) 
+#endif
 
 #define END 0xC0
 #define ESC 0xDB
