@@ -2,6 +2,7 @@
 #include "USBHost.h"
 #include "util.h"
 #include "uart.h"
+#include "config.h"
 #include <string.h>
 
 SBIT(LED, 0x90, 6);
@@ -568,7 +569,15 @@ void pollHIDdevice()
 			if ( len )
 			{		
 				LED = !LED;	
-				DEBUG_OUT("HID %lu, %i data %i : ", HIDdevice[hiddevice].type, hiddevice, HIDdevice[hiddevice].endPoint & 0x7F);
+				DEBUG_OUT("HID %lu, %i data %i : \n", HIDdevice[hiddevice].type, hiddevice, HIDdevice[hiddevice].endPoint & 0x7F);
+#ifdef USB_PROTOCOL_DEBUG
+				unsigned char i;
+				for (i = 0; i < len; i++)
+				{
+					DEBUG_OUT("%02X ", RxBuffer[i]);
+				}
+				putchar('\n');
+#endif
 				sendHidPollMSG(MSG_TYPE_DEVICE_POLL,len, HIDdevice[hiddevice].type, hiddevice, HIDdevice[hiddevice].endPoint & 0x7F, RxBuffer,VendorProductID[HIDdevice[hiddevice].rootHub].idVendorL,VendorProductID[HIDdevice[hiddevice].rootHub].idVendorH,VendorProductID[HIDdevice[hiddevice].rootHub].idProductL,VendorProductID[HIDdevice[hiddevice].rootHub].idProductH);
 			}
 		}
@@ -1084,6 +1093,17 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 			delay(1);
 		} while (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusL & 0x10);
 
+		if (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusH & 0x02)
+		{
+			DEBUG_OUT("Low speed device is found\n");
+			getUsbHubPort(rootHubIndex, i)->speed = 0;
+		}
+		else
+		{
+			DEBUG_OUT("Full speed device is found\n");
+			getUsbHubPort(rootHubIndex, i)->speed = 1;
+		}
+
 		if ((((PXUSB_HUB_STATUS)RxBuffer)->PortChangeL & 0x10))
 		{
 			DEBUG_OUT("Reset complete\n")
@@ -1102,6 +1122,14 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 		ASSERT_HUB_RESULT(s);
 
 		delay(100);
+
+		DEBUG_OUT("-----Enumerate device-----\n");
+		s = enumerateUsbDevice(rootHubIndex, i);
+
+		if (s == ERR_SUCCESS)
+		{
+			getUsbHubPort(rootHubIndex, i)->status = ROOT_DEVICE_CONNECTED;
+		}
 	}
 
 	return s;
