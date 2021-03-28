@@ -992,7 +992,7 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 	portNum = receiveDataBuffer[2];
 
 	DEBUG_OUT("-----Turn on ports-----\n");
-	for (i=0; i<portNum; i++)
+	for (i = 0; i < portNum; i++)
 	{
 		DEBUG_OUT("port:%d\n", i);
 		fillTxBuffer(SetHubFeature, sizeof(SetHubFeature));
@@ -1006,7 +1006,7 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 	}
 
 	DEBUG_OUT("-----Clear port connection Info-----\n");
-	for (i=0; i<portNum; i++)
+	for (i = 0; i < portNum; i++)
 	{
 		DEBUG_OUT("port:%d\n", i);
 		fillTxBuffer(ClearHubFeature, sizeof(ClearHubFeature));
@@ -1018,6 +1018,21 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 			return s;
 		}
 
+	}
+
+	for (i = 0; i < portNum; i++)
+	{
+		DEBUG_OUT("-----Get port%d status-----\n", i);
+		delay(50);
+		selectHubPort(rootHubIndex, EXHUB_PORT_NONE);
+		fillTxBuffer(GetHubStatus, sizeof(GetHubStatus));
+		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = i + 1;
+		s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+		if (s != ERR_SUCCESS)
+		{
+			return s;
+		}
+		dumpRxBuffer(len);
 	}
 
 	return s;
