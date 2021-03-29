@@ -1103,11 +1103,33 @@ static unsigned char pollUsbHubConnection(unsigned char rootHubIndex)
 		ASSERT_HUB_RESULT(s);
 
 		// Should check connection event?
-		if ((((PXUSB_HUB_STATUS)RxBuffer)->PortStatusL & 0x01) && ((PXUSB_HUB_STATUS)RxBuffer)->PortChangeL & 0x01)
+		if (((PXUSB_HUB_STATUS)RxBuffer)->PortChangeL & 0x01)
 		{
-			DEBUG_OUT("New Device is detected on port%d-%d\n", rootHubIndex, i);
-			s = clearHubFeature(i, HUB_C_PORT_CONNECTION);
-			ASSERT_HUB_RESULT(s);
+			if (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusL & 0x01)
+			{
+				DEBUG_OUT("New Device is detected on port%d-%d\n", rootHubIndex, i);
+				s = clearHubFeature(i, HUB_C_PORT_CONNECTION);
+				ASSERT_HUB_RESULT(s);
+			}
+			else
+			{
+				DEBUG_OUT("Device disconnected. port%d-%d\n", rootHubIndex, i);
+				s = clearHubFeature(i, HUB_C_PORT_CONNECTION);
+				ASSERT_HUB_RESULT(s);
+
+				usbHubDevice[rootHubIndex][i].address = 0;
+				usbHubDevice[rootHubIndex][i].status = 0;
+				unsigned char hididx;
+				for (hididx = 0; hididx < MAX_HID_DEVICES; hididx++)
+				{
+					if (HIDdevice[hididx].rootHub == rootHubIndex && HIDdevice[hididx].port == i)
+					{
+						HIDdevice[hididx].connected = 0;
+					}
+				}
+
+				continue;
+			}
 		}
 		else
 		{
