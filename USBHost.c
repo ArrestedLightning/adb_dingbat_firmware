@@ -164,6 +164,10 @@ void selectHubPort(unsigned char rootHubIndex, unsigned char HubPortIndex)
 	else
 	{
         setHostUsbAddr(usbHubDevice[rootHubIndex][HubPortIndex].address);
+		if (usbHubDevice[rootHubIndex][HubPortIndex].speed == USB_SPEED_LS)
+		{
+			UH_SETUP |= bUH_PRE_PID_EN;
+		}
         setUsbSpeed(usbHubDevice[rootHubIndex][HubPortIndex].speed);
 	}
 }
@@ -1048,12 +1052,12 @@ static unsigned char initializeUsbHubPort(unsigned char rootHubIndex, unsigned c
 	if (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusH & 0x02)
 	{
 		DEBUG_OUT("Low speed device is found\n");
-		getUsbHubPort(rootHubIndex, portIndex)->speed = 1;
+		getUsbHubPort(rootHubIndex, portIndex)->speed = USB_SPEED_LS;
 	}
 	else
 	{
 		DEBUG_OUT("Full speed device is found\n");
-		getUsbHubPort(rootHubIndex, portIndex)->speed = 1;
+		getUsbHubPort(rootHubIndex, portIndex)->speed = USB_SPEED_FS;
 	}
 
 	if ((((PXUSB_HUB_STATUS)RxBuffer)->PortChangeL & 0x10))

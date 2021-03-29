@@ -11,6 +11,8 @@
 #define ENDPOINT_OUT            0
 #define ENDPOINT_IN             1
 
+#define USB_SPEED_LS 0
+#define USB_SPEED_FS 1
 
 #define ERR_SUCCESS         0x00
 #define ERR_USB_CONNECT     0x15
