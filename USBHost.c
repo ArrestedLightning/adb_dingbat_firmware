@@ -857,7 +857,8 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 	unsigned char s = ERR_SUCCESS, cfg, dv_cls, addr;
 	unsigned char HIDDevice = 0;
 	selectHubPort(rootHubIndex, portIndex);
-	DEBUG_OUT("root hub port %i enabled\n", rootHubIndex);
+	DEBUG_OUT("root hub port %i-%i (%d)enabled\n",
+			  rootHubIndex, portIndex, getUsbHubPort(rootHubIndex, portIndex)->address);
 	s = getDeviceDescriptor();
 
 	if (s == ERR_SUCCESS)
@@ -1047,7 +1048,7 @@ static unsigned char initializeUsbHubPort(unsigned char rootHubIndex, unsigned c
 	if (((PXUSB_HUB_STATUS)RxBuffer)->PortStatusH & 0x02)
 	{
 		DEBUG_OUT("Low speed device is found\n");
-		getUsbHubPort(rootHubIndex, portIndex)->speed = 0;
+		getUsbHubPort(rootHubIndex, portIndex)->speed = 1;
 	}
 	else
 	{
@@ -1069,7 +1070,7 @@ static unsigned char initializeUsbHubPort(unsigned char rootHubIndex, unsigned c
 	}
 
 	DEBUG_OUT("-----Wake up from suspend-----\n");
-	s = clearHubFeature(portIndex, HUB_PORT_SUSPEND);
+	s = clearHubFeature(portIndex, HUB_C_PORT_SUSPEND);
 	ASSERT_HUB_RESULT(s);
 
 	delay(100);
@@ -1100,7 +1101,7 @@ static unsigned char pollUsbHubConnection(unsigned char rootHubIndex)
 		// Should check connection event?
 		if ((((PXUSB_HUB_STATUS)RxBuffer)->PortStatusL & 0x01) && ((PXUSB_HUB_STATUS)RxBuffer)->PortChangeL & 0x01)
 		{
-			DEBUG_OUT("New Device is detected on port\n");
+			DEBUG_OUT("New Device is detected on port%d-%d\n", rootHubIndex, i);
 			s = clearHubFeature(i, HUB_C_PORT_CONNECTION);
 			ASSERT_HUB_RESULT(s);
 		}
@@ -1111,7 +1112,13 @@ static unsigned char pollUsbHubConnection(unsigned char rootHubIndex)
 
 		delay(100);
 
+		getUsbHubPort(rootHubIndex, i)->address = 0;
 		s = initializeUsbHubPort(rootHubIndex, i);
+
+		if (s != ERR_SUCCESS)
+		{
+			DEBUG_OUT("Hub polling failed:0x%02X\n", s);
+		}
 	}
 
 	return s;
