@@ -1,5 +1,6 @@
 #include "CH559.h"
 #include "util.h"
+#include "config.h"
 
 FunctionReference runBootloader = (FunctionReference)0xF400;
 
@@ -201,7 +202,11 @@ unsigned char digitalRead(unsigned char port, unsigned char pin)
 
 int putchar(int c)
 {
+#ifndef USB_PROTOCOL_DEBUG
 	UART1Send(c);
+#else
+	UART0Send(c);
+#endif
 }
 
 int getchar() 

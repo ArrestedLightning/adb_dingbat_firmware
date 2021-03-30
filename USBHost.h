@@ -11,6 +11,8 @@
 #define ENDPOINT_OUT            0
 #define ENDPOINT_IN             1
 
+#define USB_SPEED_LS 0
+#define USB_SPEED_FS 1
 
 #define ERR_SUCCESS         0x00
 #define ERR_USB_CONNECT     0x15
@@ -99,6 +101,14 @@ typedef struct _UsbDevice
 
 	unsigned char   HubPortNum;
 } UsbDevice, *PUsbDevice;
+
+typedef struct _USB_HUB_STATUS {
+	unsigned char PortStatusL;
+	unsigned char PortStatusH;
+	unsigned char PortChangeL;
+	unsigned char PortChangeH;
+} USB_HUB_STATUS, *PUSB_HUB_STATUS;
+typedef USB_HUB_STATUS __xdata *PXUSB_HUB_STATUS;
 
 void resetRootHub(unsigned char i);
 void initUSB_Host();
