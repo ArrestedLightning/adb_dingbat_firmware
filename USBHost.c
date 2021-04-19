@@ -19,6 +19,8 @@ __code unsigned char SetupSetUsbConfig[] = { USB_REQ_TYP_OUT, USB_SET_CONFIGURAT
 __code unsigned char  SetHIDIdleRequest[] = {USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, HID_SET_IDLE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 __code unsigned char  GetHIDReport[] = {USB_REQ_TYP_IN | USB_REQ_RECIP_INTERF, USB_GET_DESCRIPTOR, 0x00, USB_DESCR_TYP_REPORT, 0 /*interface*/, 0x00, 0xff, 0x00};
 __code unsigned char  SetHIDReport[] = {USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, USB_SET_CONFIGURATION, 0, 0x02, 0, 0, 0, 0};
+__code unsigned char  SetHIDProtocol[] = {USB_REQ_TYP_OUT | USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, HID_SET_PROTOCOL, 0, 0x00, 0, 0, 0, 0};
+__code unsigned char  GetHIDProtocol[] = {USB_REQ_TYP_IN | USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, HID_GET_PROTOCOL, 0, 0x00, 0, 0, 1, 0};
 
 __code unsigned char GetHubDescriptor[] = 	{USB_REQ_TYP_IN | USB_REQ_TYP_CLASS | USB_REQ_RECIP_DEVICE, USB_GET_DESCRIPTOR, 0, USB_DESCR_TYP_HUB, 0, 0, sizeof(USB_DEV_DESCR), 0};
 __code unsigned char GetHubStatus[] = 	{USB_REQ_TYP_IN | USB_REQ_TYP_CLASS | USB_REQ_RECIP_OTHER, USB_GET_STATUS, 0, 0, 0, 0, 4, 0};
@@ -593,6 +595,10 @@ void pollHIDdevice()
 				sendHidPollMSG(MSG_TYPE_DEVICE_POLL,len, HIDdevice[hiddevice].type, hiddevice, HIDdevice[hiddevice].endPoint & 0x7F, RxBuffer,VendorProductID[HIDdevice[hiddevice].rootHub].idVendorL,VendorProductID[HIDdevice[hiddevice].rootHub].idVendorH,VendorProductID[HIDdevice[hiddevice].rootHub].idProductL,VendorProductID[HIDdevice[hiddevice].rootHub].idProductH);
 			}
 		}
+		else
+		{
+            delayUs(100);
+		}
 		}
 	}
 }
@@ -779,14 +785,14 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 	}
 }
 
-unsigned char getHIDDeviceReport(unsigned char CurrentDevive)
+unsigned char getHIDDeviceReport(unsigned char CurrentDevice)
 {
  	unsigned char s;
 	unsigned short len, i, reportLen = RECEIVE_BUFFER_LEN;
-	DEBUG_OUT("Requesting report from interface %i\n", HIDdevice[CurrentDevive].interface);
+	DEBUG_OUT("Requesting report from interface %i\n", HIDdevice[CurrentDevice].interface);
 
 	fillTxBuffer(SetHIDIdleRequest, sizeof(SetHIDIdleRequest));
-	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[CurrentDevive].interface;	
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[CurrentDevice].interface;	
 	s = hostCtrlTransfer(receiveDataBuffer, &len, 0);
 	
 	//todo really dont care if successful? 8bitdo faild here
@@ -794,7 +800,7 @@ unsigned char getHIDDeviceReport(unsigned char CurrentDevive)
 	//	return s;
 
 	fillTxBuffer(GetHIDReport, sizeof(GetHIDReport));
-	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[CurrentDevive].interface;
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[CurrentDevice].interface;
 	((PXUSB_SETUP_REQ)TxBuffer)->wLengthL = (unsigned char)(reportLen & 255); 
 	((PXUSB_SETUP_REQ)TxBuffer)->wLengthH = (unsigned char)(reportLen >> 8);
 	s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
@@ -806,8 +812,8 @@ unsigned char getHIDDeviceReport(unsigned char CurrentDevive)
 		DEBUG_OUT("0x%02X ", receiveDataBuffer[i]);
 	}
 	DEBUG_OUT("\n");
-	sendProtocolMSG(MSG_TYPE_HID_INFO, len, CurrentDevive, HIDdevice[CurrentDevive].interface, HIDdevice[CurrentDevive].rootHub, receiveDataBuffer);
-	parseHIDDeviceReport(receiveDataBuffer, len, CurrentDevive);
+	sendProtocolMSG(MSG_TYPE_HID_INFO, len, CurrentDevice, HIDdevice[CurrentDevice].interface, HIDdevice[CurrentDevice].rootHub, receiveDataBuffer);
+	parseHIDDeviceReport(receiveDataBuffer, len, CurrentDevice);
 	return (ERR_SUCCESS);
 }
 
@@ -827,6 +833,44 @@ void readHIDInterface(PXUSB_ITF_DESCR interface, PXUSB_HID_DESCR descriptor)
 	DEBUG_OUT("  Country code 0x%02X\n", descriptor->bCountryCode);
 	DEBUG_OUT("  TypeX 0x%02X\n", descriptor->bDescriptorTypeX);
 }
+
+static char getHIDProtocol(unsigned char CurrentDevice)
+{
+	unsigned char s, i;
+	unsigned short len;
+
+	fillTxBuffer(GetHIDProtocol, sizeof(GetHIDProtocol));
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[CurrentDevice].interface;
+	s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+	if(s != ERR_SUCCESS)
+		return s;
+	
+	for (i = 0; i < len; i++)
+	{
+		DEBUG_OUT("0x%02X ", receiveDataBuffer[i]);
+	}
+	DEBUG_OUT("\n");
+
+	return ERR_SUCCESS;
+}
+
+static char setHIDProtocol(unsigned char CurrentDevice)
+{
+	unsigned char s;
+	unsigned short len;
+
+	fillTxBuffer(SetHIDProtocol, sizeof(SetHIDProtocol));
+	((PXUSB_SETUP_REQ)TxBuffer)->wValueL = 0;
+	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[CurrentDevice].interface;
+	s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);
+	if(s != ERR_SUCCESS)
+		return s;
+
+	DEBUG_OUT("Set HID Protocol to 0\n");
+
+	return ERR_SUCCESS;
+}
+
 
 void readEndpoint()
 {
@@ -860,6 +904,8 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 {
 	unsigned char s = ERR_SUCCESS, cfg, dv_cls, addr;
 	unsigned char HIDDevice = 0;
+	// unsigned char hidCount = 0;
+	// unsigned char hidIndexes[16] = {0};
 	selectHubPort(rootHubIndex, portIndex);
 	DEBUG_OUT("root hub port %i-%i (%d)enabled\n",
 			  rootHubIndex, portIndex, getUsbHubPort(rootHubIndex, portIndex)->address);
@@ -950,6 +996,7 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 									HIDdevice[hiddevice].interface = currentInterface->bInterfaceNumber;
 									HIDdevice[hiddevice].rootHub = rootHubIndex;
 									HIDdevice[hiddevice].port = portIndex;
+									// hidIndexes[hidCount++] = hiddevice;
 									DEBUG_OUT("Got endpoint for the HIDdevice 0x%02x\n", HIDdevice[hiddevice].endPoint);
 									getHIDDeviceReport(hiddevice);
 								}
@@ -980,6 +1027,14 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 						}
 						i += desc[0];
 					}
+
+					// for (unsigned char idx = 0; idx < hidCount; idx++)
+					// {
+					// 	DEBUG_OUT("Get HID Protocol\n");
+					// 	getHIDProtocol(hidIndexes[idx]);
+					// 	setHIDProtocol(hidIndexes[idx]);
+					// }
+
 					return ERR_SUCCESS;
 				}
 			}
