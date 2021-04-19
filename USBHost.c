@@ -607,20 +607,31 @@ void sendHidOutReport(uint8_t device, uint8_t dat)
 {
 	uint8_t s;
 
+	if (HIDdevice[device].connected)
+	{
+		selectHubPort(HIDdevice[device].rootHub, HIDdevice[device].port);
+	}
+	else
+	{
+		return;
+	}
+
 	fillTxBuffer(SetHIDReport, sizeof(SetHIDReport));
 	((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = HIDdevice[device].interface;
 	((PXUSB_SETUP_REQ)TxBuffer)->wLengthL = 1;
-	// TxBuffer[sizeof(SetHIDReport)] = dat;
-    // s = hostCtrlTransfer(receiveDataBuffer, &len, RECEIVE_BUFFER_LEN);             
 
-	delayUs(200);
+	// delayUs(200);
 	UH_TX_LEN = sizeof(USB_SETUP_REQ);
 	s = hostTransfer((unsigned char)(USB_PID_SETUP << 4), 0, 10000);
 	if (s != ERR_SUCCESS)
 		return;
 
 	TxBuffer[0] = dat;
+	UH_RX_CTRL = UH_TX_CTRL = bUH_R_TOG | bUH_R_AUTO_TOG | bUH_T_TOG | bUH_T_AUTO_TOG;
 	UH_TX_LEN = 1;
+
+	// delayUs(200);
+
 	s = hostTransfer((unsigned char)(USB_PID_OUT << 4), UH_TX_CTRL, 10000);
 	// UH_TX_LEN = 0;
     // s = hostTransfer(USB_PID_OUT << 4, bUH_R_TOG | bUH_T_TOG, 10000);
