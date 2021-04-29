@@ -66,6 +66,10 @@ void initUART0(unsigned long baud, int alt)
     TH1 = (256 - x) & 255;
     TR1 = 1;
 	TI = 1;
+
+	// Enable serial interrupt
+	ES = 1;
+	EA = 1;
 }
 
 unsigned char UART0Receive()
