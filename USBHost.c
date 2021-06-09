@@ -1143,7 +1143,7 @@ static unsigned char initializeUsbHubPort(unsigned char rootHubIndex, unsigned c
 	s = clearHubFeature(portIndex, HUB_C_PORT_SUSPEND);
 	ASSERT_HUB_RESULT(s);
 
-	delay(100);
+	delay(500);
 
 	DEBUG_OUT("-----Enumerate device-----\n");
 	s = enumerateUsbDevice(rootHubIndex, portIndex);
@@ -1255,6 +1255,9 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 		ASSERT_HUB_RESULT(s);
 	}
 
+	// wait at least 50ms after power on
+	delay(500);
+
 	for (i = 0; i < portNum; i++)
 	{
 		getUsbHubPort(rootHubIndex, i)->status = ROOT_DEVICE_FAILED;
@@ -1293,8 +1296,6 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 
 	for(retry = 0; retry < 10; retry++) //todo test fewer retries
 	{
-	delay( 100 );
-		delay(100); //todo test lower delay
 		resetHubDevices(rootHubIndex);
 		resetRootHubPort(rootHubIndex);                      
 		for (i = 0; i < 100; i++) //todo test fewer retries
@@ -1309,6 +1310,8 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 			DEBUG_OUT("Failed to enable root hub port %i\n", rootHubIndex);
 			continue;
 		}
+
+		delay(500);
 
 		s = enumerateUsbDevice(rootHubIndex, EXHUB_PORT_NONE);
 		if (s == ERR_SUCCESS)
@@ -1325,7 +1328,7 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 		DEBUG_OUT( "Error = %02X\n", s);
 		sendProtocolMSG(MSG_TYPE_ERROR,0, rootHubIndex+1, s, 0xEE, 0);
 		rootHubDevice[rootHubIndex].status = ROOT_DEVICE_FAILED;
-		setUsbSpeed(1);	//TODO define speeds
+		// setUsbSpeed(1);	//TODO define speeds
 	}
 	return s;
 }
