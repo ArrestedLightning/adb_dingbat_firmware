@@ -81,9 +81,8 @@ unsigned char UART0Receive()
 
 void UART0Send(unsigned char b)
 {
-	while (!TI);
-    TI = 0;
     SBUF = b;
+	while (!TI);
 }
 
 void initUART1(unsigned long baud)

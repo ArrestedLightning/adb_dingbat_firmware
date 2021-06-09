@@ -23,6 +23,11 @@ void CH559UART0Interrupt(void) __interrupt INT_NO_UART0 __using 1
 			rxPos = 0;
 		}
 	}
+
+	if (TI)
+	{
+		TI = 0;
+	}
 }
 
 #ifndef USB_PROTOCOL_DEBUG
