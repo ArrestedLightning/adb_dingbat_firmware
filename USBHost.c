@@ -529,6 +529,7 @@ struct
 	unsigned char connected;
 	unsigned char rootHub;
 	unsigned char port;
+	unsigned char hasLed;
 	unsigned char interface;
 	unsigned char endPoint;
 	unsigned long type;
@@ -558,6 +559,7 @@ void resetHubDevices(unsigned char hubindex)
 			HIDdevice[hiddevice].interface = 0;
 			HIDdevice[hiddevice].endPoint = 0;
 			HIDdevice[hiddevice].type = 0;
+			HIDdevice[hiddevice].hasLed = 0;
 		}
 	}
 
@@ -607,7 +609,7 @@ void sendHidOutReport(uint8_t device, uint8_t dat)
 {
 	uint8_t s;
 
-	if (HIDdevice[device].connected)
+	if (HIDdevice[device].connected && HIDdevice[device].hasLed)
 	{
 		selectHubPort(HIDdevice[device].rootHub, HIDdevice[device].port);
 	}
@@ -667,6 +669,7 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 				{
 					case REPORT_USAGE_PAGE_LEDS:
 						DEBUG_OUT("LEDs");
+						HIDdevice[CurrentDevive].hasLed = 1;
 					break;
 					case REPORT_USAGE_PAGE_KEYBOARD:
 						DEBUG_OUT("Keyboard/Keypad");

@@ -127,7 +127,7 @@ void processUart()
 		}
 		else if (uartRxBuff[0] & 0x80)
 		{
-			sendHidOutReport((uartRxBuff[0] & 0x60) >> 3,
+			sendHidOutReport((uartRxBuff[0] & 0x60) >> 5,
 							 (uartRxBuff[0]) & 0x1F);
 		}
 		rxPos = 0;
