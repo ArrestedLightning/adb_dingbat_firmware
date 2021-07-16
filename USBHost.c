@@ -74,7 +74,7 @@ void initUSB_Host()
 
 	disableRootHubPort(0);
 	disableRootHubPort(1);
-	USB_INT_EN = bUIE_TRANSFER | bUIE_DETECT;
+	USB_INT_EN = bUIE_TRANSFER | bUIE_DETECT | bUIE_HST_SOF;
 }
 
 void setHostUsbAddr(unsigned char addr)
@@ -269,7 +269,7 @@ unsigned char hostTransfer(unsigned char endp_pid, unsigned char tog, unsigned s
         }
         delayUs(15);
     }
-    while ( ++retries < 200 );
+    while ( ++retries < 1 );
     return( ERR_USB_TRANSFER );                              
 }
 
@@ -285,7 +285,7 @@ unsigned char hostCtrlTransfer(unsigned char __xdata *DataBuf, unsigned short *R
 	PXUSB_SETUP_REQ pSetupReq = ((PXUSB_SETUP_REQ)TxBuffer);
 	pBuf = DataBuf;
 	pLen = RetLen;
-	delayUs(200);
+	// delayUs(200);
 	if (pLen)
 		*pLen = 0;
 	UH_TX_LEN = sizeof(USB_SETUP_REQ);
@@ -302,7 +302,7 @@ unsigned char hostCtrlTransfer(unsigned char __xdata *DataBuf, unsigned short *R
 			// DEBUG_OUT("Remaining bytes to read %d\n", RemLen);
 			while (RemLen)
 			{
-				delayUs(300);
+				delayUs(3);
 				s = hostTransfer((unsigned char)(USB_PID_IN << 4), UH_RX_CTRL, 10000); 
 				if (s != ERR_SUCCESS)
 					return (s);
@@ -325,7 +325,7 @@ unsigned char hostCtrlTransfer(unsigned char __xdata *DataBuf, unsigned short *R
 			//todo rework this TxBuffer overwritten
 			while (RemLen)
 			{
-				delayUs(200);
+				delayUs(2);
 				UH_TX_LEN = RemLen >= endpoint0Size ? endpoint0Size : RemLen;
 				//memcpy(TxBuffer, pBuf, UH_TX_LEN);
 				pBuf += UH_TX_LEN;
@@ -346,7 +346,7 @@ unsigned char hostCtrlTransfer(unsigned char __xdata *DataBuf, unsigned short *R
 			}
 		}
 	}
-	delayUs(200);
+	delayUs(2);
 	s = hostTransfer((UH_TX_LEN ? USB_PID_IN << 4 : USB_PID_OUT << 4), bUH_R_TOG | bUH_T_TOG, 10000);
 	if (s != ERR_SUCCESS)
 		return (s);
@@ -524,15 +524,17 @@ unsigned char getInterfaceDescriptor(unsigned char index)
 #define REPORT_USAGE_PAGE_VENDOR	0xff00
 
 #define MAX_HID_DEVICES 8
-struct 
+typedef struct 
 {
 	unsigned char connected;
 	unsigned char rootHub;
 	unsigned char port;
+	unsigned char hasLed;
 	unsigned char interface;
 	unsigned char endPoint;
 	unsigned long type;
-}  __xdata HIDdevice[MAX_HID_DEVICES];
+}  HIDdevice_t;
+__xdata HIDdevice_t HIDdevice[MAX_HID_DEVICES];
 
 struct 
 {
@@ -558,6 +560,7 @@ void resetHubDevices(unsigned char hubindex)
 			HIDdevice[hiddevice].interface = 0;
 			HIDdevice[hiddevice].endPoint = 0;
 			HIDdevice[hiddevice].type = 0;
+			HIDdevice[hiddevice].hasLed = 0;
 		}
 	}
 
@@ -595,10 +598,10 @@ void pollHIDdevice()
 				sendHidPollMSG(MSG_TYPE_DEVICE_POLL,len, HIDdevice[hiddevice].type, hiddevice, HIDdevice[hiddevice].endPoint & 0x7F, RxBuffer,VendorProductID[HIDdevice[hiddevice].rootHub].idVendorL,VendorProductID[HIDdevice[hiddevice].rootHub].idVendorH,VendorProductID[HIDdevice[hiddevice].rootHub].idProductL,VendorProductID[HIDdevice[hiddevice].rootHub].idProductH);
 			}
 		}
-		else
-		{
-            delayUs(100);
-		}
+		// else
+		// {
+        //     delayUs(100);
+		// }
 		}
 	}
 }
@@ -607,7 +610,7 @@ void sendHidOutReport(uint8_t device, uint8_t dat)
 {
 	uint8_t s;
 
-	if (HIDdevice[device].connected)
+	if (HIDdevice[device].connected && HIDdevice[device].hasLed)
 	{
 		selectHubPort(HIDdevice[device].rootHub, HIDdevice[device].port);
 	}
@@ -667,6 +670,7 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 				{
 					case REPORT_USAGE_PAGE_LEDS:
 						DEBUG_OUT("LEDs");
+						HIDdevice[CurrentDevive].hasLed = 1;
 					break;
 					case REPORT_USAGE_PAGE_KEYBOARD:
 						DEBUG_OUT("Keyboard/Keypad");
@@ -891,11 +895,11 @@ unsigned char calcDeviceAddress(unsigned char rootHubIndex, unsigned char portIn
 {
 	if (portIndex == EXHUB_PORT_NONE)
 	{
-		return ((rootHubIndex << 7) | (EXHUB_PORT_NONE & 0x7F));
+		return ((rootHubIndex << 6) | 0x3F);
 	}
 	else
 	{
-		return ((rootHubIndex << 7) | portIndex) + 1;
+		return ((rootHubIndex << 6) | portIndex) + 1;
 	}
 }
 
@@ -920,6 +924,8 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 	selectHubPort(rootHubIndex, portIndex);
 	DEBUG_OUT("root hub port %i-%i (%d)enabled\n",
 			  rootHubIndex, portIndex, getUsbHubPort(rootHubIndex, portIndex)->address);
+
+	syncSof();
 	s = getDeviceDescriptor();
 
 	if (s == ERR_SUCCESS)
@@ -949,6 +955,7 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 				{
 					DEBUG_OUT("Device String: %s\n", receiveDataBuffer);
 				}
+				syncSof();
 				s = getConfigurationDescriptor();
 				if (s == ERR_SUCCESS)
 				{
@@ -998,18 +1005,31 @@ unsigned char enumerateUsbDevice(unsigned char rootHubIndex, unsigned char portI
 									unsigned char hiddevice;
 									for (hiddevice = 0; hiddevice < MAX_HID_DEVICES; hiddevice++)
 									{
-										if (HIDdevice[hiddevice].connected == 0)
+										HIDdevice_t *dev = &HIDdevice[hiddevice];
+										if (dev->endPoint == d->bEndpointAddress &&
+											dev->interface == currentInterface->bInterfaceNumber &&
+											dev->rootHub == rootHubIndex &&
+											dev->port == portIndex)
+										{
+											// already configured
 											break;
+										}
+
+										if (dev->connected == 0)
+										{
+											DEBUG_OUT("Connected device at position: %i\n", hiddevice);
+											dev->endPoint = d->bEndpointAddress;
+											dev->connected = 1;
+											dev->interface = currentInterface->bInterfaceNumber;
+											dev->rootHub = rootHubIndex;
+											dev->port = portIndex;
+											// hidIndexes[hidCount++] = hiddevice;
+											DEBUG_OUT("Got endpoint for the HIDdevice 0x%02x\n", HIDdevice[hiddevice].endPoint);
+											getHIDDeviceReport(hiddevice);
+
+											break;
+										}
 									}
-									DEBUG_OUT("Connected device at position: %i\n", hiddevice);
-									HIDdevice[hiddevice].endPoint = d->bEndpointAddress;
-									HIDdevice[hiddevice].connected = 1;
-									HIDdevice[hiddevice].interface = currentInterface->bInterfaceNumber;
-									HIDdevice[hiddevice].rootHub = rootHubIndex;
-									HIDdevice[hiddevice].port = portIndex;
-									// hidIndexes[hidCount++] = hiddevice;
-									DEBUG_OUT("Got endpoint for the HIDdevice 0x%02x\n", HIDdevice[hiddevice].endPoint);
-									getHIDDeviceReport(hiddevice);
 								}
 							}
 							break;
@@ -1103,6 +1123,7 @@ static unsigned char initializeUsbHubPort(unsigned char rootHubIndex, unsigned c
 	unsigned char s;
 
 	DEBUG_OUT("-----Reset port-----\n");
+	syncSof();
 	s = setHubFeature(portIndex, HUB_PORT_RESET);
 	ASSERT_HUB_RESULT(s);
 
@@ -1143,7 +1164,7 @@ static unsigned char initializeUsbHubPort(unsigned char rootHubIndex, unsigned c
 	s = clearHubFeature(portIndex, HUB_C_PORT_SUSPEND);
 	ASSERT_HUB_RESULT(s);
 
-	delay(100);
+	delay(500);
 
 	DEBUG_OUT("-----Enumerate device-----\n");
 	s = enumerateUsbDevice(rootHubIndex, portIndex);
@@ -1202,7 +1223,7 @@ static unsigned char pollUsbHubConnection(unsigned char rootHubIndex)
 			continue;
 		}
 
-		delay(100);
+		// delay(100);
 
 		getUsbHubPort(rootHubIndex, i)->address = 0;
 		s = initializeUsbHubPort(rootHubIndex, i);
@@ -1255,6 +1276,9 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 		ASSERT_HUB_RESULT(s);
 	}
 
+	// wait at least 50ms after power on
+	delay(500);
+
 	for (i = 0; i < portNum; i++)
 	{
 		getUsbHubPort(rootHubIndex, i)->status = ROOT_DEVICE_FAILED;
@@ -1262,6 +1286,7 @@ static unsigned char initializeUsbHubConnection(unsigned char rootHubIndex)
 		DEBUG_OUT("-----Get port%d status-----\n", i);
 		delay(50);
 		selectHubPort(rootHubIndex, EXHUB_PORT_NONE);
+		syncSof();
 		s = getHubStatus(i);
 		dumpRxBuffer(4);
 		ASSERT_HUB_RESULT(s);
@@ -1293,8 +1318,6 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 
 	for(retry = 0; retry < 10; retry++) //todo test fewer retries
 	{
-	delay( 100 );
-		delay(100); //todo test lower delay
 		resetHubDevices(rootHubIndex);
 		resetRootHubPort(rootHubIndex);                      
 		for (i = 0; i < 100; i++) //todo test fewer retries
@@ -1309,6 +1332,8 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 			DEBUG_OUT("Failed to enable root hub port %i\n", rootHubIndex);
 			continue;
 		}
+
+		delay(500);
 
 		s = enumerateUsbDevice(rootHubIndex, EXHUB_PORT_NONE);
 		if (s == ERR_SUCCESS)
@@ -1325,7 +1350,7 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex)
 		DEBUG_OUT( "Error = %02X\n", s);
 		sendProtocolMSG(MSG_TYPE_ERROR,0, rootHubIndex+1, s, 0xEE, 0);
 		rootHubDevice[rootHubIndex].status = ROOT_DEVICE_FAILED;
-		setUsbSpeed(1);	//TODO define speeds
+		// setUsbSpeed(1);	//TODO define speeds
 	}
 	return s;
 }
@@ -1337,6 +1362,7 @@ unsigned char checkRootHubConnections()
 	if (UIF_DETECT)                                                        
 	{
 		UIF_DETECT = 0;    
+#ifndef USB_H0_DISABLED
 			if(USB_HUB_ST & bUHS_H0_ATTACH)
 			{
 				if(rootHubDevice[0].status == ROOT_DEVICE_DISCONNECT || (UHUB0_CTRL & bUH_PORT_EN) == 0x00)
@@ -1357,6 +1383,7 @@ unsigned char checkRootHubConnections()
 					sendProtocolMSG(MSG_TYPE_DISCONNECTED,0, 0x01, 0x01, 0x01, 0);
 				s = ERR_USB_DISCON;
 			}
+#endif
 
 			if(USB_HUB_ST & bUHS_H1_ATTACH)
 			{

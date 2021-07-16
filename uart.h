@@ -9,9 +9,11 @@
 #define MSG_TYPE_DEVICE_INFO    0x06
 #define MSG_TYPE_HID_INFO       0x07
 #define MSG_TYPE_STARTUP        0x08
+#define MSG_TYPE_DUMMY_LOAD     0x09
 
 void processUart();
 void sendHidPollMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer,unsigned char idVendorL,unsigned char idVendorH,unsigned char idProductL,unsigned char idProductH);
 void sendProtocolMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer);
+void processSPI();
 
 #endif

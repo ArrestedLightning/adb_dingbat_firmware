@@ -1,6 +1,7 @@
 #include "CH559.h"
 #include "util.h"
 #include "config.h"
+#include "uart.h"
 
 FunctionReference runBootloader = (FunctionReference)0xF400;
 
@@ -13,13 +14,35 @@ void initClock()
     SAFE_MOD = 0x55;
     SAFE_MOD = 0xAA;
 
+	//start external oscillator
+	CLOCK_CFG |= bOSC_EN_XT;
+
+	// wait stable oscillation
+	delay(10);
+
+    SAFE_MOD = 0x55;
+    SAFE_MOD = 0xAA;
+
+	// switch to external oscillator
+	CLOCK_CFG &= ~(bOSC_EN_INT);
+
+	delay(10);
+
+    SAFE_MOD = 0x55;
+    SAFE_MOD = 0xAA;
+
 	CLOCK_CFG &= ~MASK_SYS_CK_DIV;
-	CLOCK_CFG |= 6; 															  
-	PLL_CFG = ((24 << 0) | (6 << 5)) & 255;
+	CLOCK_CFG |= SYS_CLK_DIV; 															  
+	PLL_CFG = ((PLL_MULT << 0) | (USB_CLK_DIV << 5)) & 255;
 
     SAFE_MOD = 0xFF;
 
-	delay(7);
+	// delay(7);
+	// Do not use delayUsLong
+	for (int i = 0; i < 7; i++)
+	{
+		delayUsShort(1000);
+	}
 }
 
 void uninitClock()
@@ -27,12 +50,18 @@ void uninitClock()
     SAFE_MOD = 0x55;
     SAFE_MOD = 0xAA;
 
+	// restore initial value
 	CLOCK_CFG = (1 << 7) | (0b11000); 															  
 	PLL_CFG = 0b11011000;
 
     SAFE_MOD = 0xFF;
 
-	delay(7);
+	// delay(7);
+	// Do not use delayUsLong
+	for (int i = 0; i < 7; i++)
+	{
+		delayUsShort(1000);
+	}
 }
 
 /**
@@ -66,6 +95,10 @@ void initUART0(unsigned long baud, int alt)
     TH1 = (256 - x) & 255;
     TR1 = 1;
 	TI = 1;
+
+	// Enable serial interrupt
+	ES = 1;
+	EA = 1;
 }
 
 unsigned char UART0Receive()
@@ -77,9 +110,8 @@ unsigned char UART0Receive()
 
 void UART0Send(unsigned char b)
 {
-	while (!TI);
-    TI = 0;
     SBUF = b;
+	while (!TI);
 }
 
 void initUART1(unsigned long baud)
@@ -129,6 +161,43 @@ void UART1Send(unsigned char b)
 
 	// Send to FIFO
 	SER1_THR = b;
+}
+
+void initSPI0()
+{
+	ENABLE_SPI0_CLK();
+
+	PORT_CFG &= ~bP1_OC;	// Push-pull output
+    P1_DIR |= (bSCK | bMOSI | bSCS);
+	P1_IE |= bMISO;
+
+	SPI0_SETUP &= ~(bS0_MODE_SLV | bS0_BIT_ORDER); // Master, MSB
+	SPI0_CTRL |= bS0_MOSI_OE | bS0_SCK_OE | bS0_MST_CLK; // Enable MOSI, SCK output, mode 3
+	SPI0_CTRL &= ~(bS0_DATA_DIR | bS0_2_WIRE); // Full-duplex
+
+	SPI0_CK_SE = 6; // 48/6 = 8MHz
+	SPI0_CTRL &= ~bS0_CLR_ALL; // release clear
+
+	SCS = 1;
+}
+
+void sendSPI0(uint8_t data)
+{
+	SPI0_DATA = data;
+	while (S0_FREE == 0)
+	{
+		continue;
+	}
+}
+
+uint8_t recvSPI0()
+{
+	SPI0_DATA = 0xC0;
+	while (S0_FREE == 0)
+	{
+		continue;
+	}
+	return SPI0_DATA;
 }
 
 /**
@@ -184,6 +253,129 @@ void pinMode(unsigned char port, unsigned char pin, unsigned char mode)
 		break;
 	}
 }
+
+static void turnOnDummyLoad()
+{
+	// turn on dummy load at P4.5
+	P4_OUT &= ~(1 << 5);
+	P4_DIR |= (1 << 5);
+}
+
+void turnOffDummyLoad()
+{
+	// turn off dummy load at P4.5
+	P4_PU &= ~(1 << 5);
+	P4_DIR &= ~(1 << 5);
+}
+
+static void turnOffTimer3Clock() {
+    SAFE_MOD = 0x55;
+    SAFE_MOD = 0xaa;
+	SLEEP_CTRL |= bSLP_OFF_TMR3;
+    SAFE_MOD = 0xff;
+}
+
+static void turnOnTimer3Clock() {
+    SAFE_MOD = 0x55;
+    SAFE_MOD = 0xaa;
+	SLEEP_CTRL &= ~bSLP_OFF_TMR3;
+    SAFE_MOD = 0xff;
+}
+
+static void setTimer3Prescaler(uint16_t div)
+{
+	T3_SETUP |= bT3_EN_CK_SE;
+	T3_CK_SE_L = div & 0xff;
+	T3_CK_SE_H = div >> 8;
+	T3_SETUP &= ~bT3_EN_CK_SE;
+}
+
+static uint16_t __xdata s_timeout_100ms;
+static uint8_t __xdata s_turn_off_100ms;
+static void tmr3Start()
+{
+	// if (s_timeout_100ms > 0) return;
+
+	turnOnTimer3Clock();
+
+	// clock to 10kHz
+	setTimer3Prescaler(480);
+
+	// clear counter
+	T3_CTRL &= ~bT3_CNT_EN;
+	T3_CTRL &= ~bT3_MOD_CAP;
+	T3_CTRL |= bT3_CLR_ALL;
+	T3_CTRL &= ~bT3_CLR_ALL;
+
+	// 100ms timeout
+	T3_END_L = (10000 - 1) & 0xff;
+	T3_END_H = (10000 - 1) >> 8;
+
+	// enable interrupt
+    T3_STAT |= bT3_IF_DMA_END | bT3_IF_FIFO_OV | bT3_IF_FIFO_REQ | bT3_IF_ACT | bT3_IF_END;
+	T3_SETUP |= bT3_IE_END;
+	IP_EX |= bIP_TMR3;
+	IE_TMR3 = 1;
+	EA = 1;
+
+	// start counter
+	T3_CTRL |= bT3_CNT_EN;
+}
+
+void CH559TIMER3Interrupt(void) __interrupt INT_NO_TMR3 __using 2
+{
+	T3_CTRL &= ~bT3_CNT_EN; // stop timer
+	T3_STAT |= bT3_IF_END; // clear interrupt flag
+
+	--s_timeout_100ms;
+
+	if (s_timeout_100ms == s_turn_off_100ms)
+	{
+		turnOffDummyLoad();
+	}
+	else if (s_timeout_100ms == 0)
+	{
+		// disable interrupt
+		IE_TMR3 = 0;
+		// reset timer
+		T3_CTRL |= bT3_CLR_ALL;
+
+		turnOffTimer3Clock();
+
+		return;
+	}
+
+	T3_CTRL |= bT3_CNT_EN; // restart timer
+}
+
+void setTMR3TimeOut(uint8_t turn_off_100ms)
+{
+	if (s_timeout_100ms)
+	{
+		return;
+	}
+
+	// set timeout
+	if (turn_off_100ms > 100)
+	{
+		turn_off_100ms = 100;
+	}
+	s_timeout_100ms = turn_off_100ms * 2;
+	s_turn_off_100ms = s_timeout_100ms - turn_off_100ms;
+
+	if (s_timeout_100ms > 0) {
+		tmr3Start();
+
+		turnOnDummyLoad();
+
+		// send message dummy load start
+		sendProtocolMSG(MSG_TYPE_DUMMY_LOAD, 0x00, 1, s_timeout_100ms, s_turn_off_100ms, 0);
+	} else {
+		// send message dummy load stop
+		sendProtocolMSG(MSG_TYPE_DUMMY_LOAD, 0x00, 0, 0, 0, 0);
+	}
+}
+
 /*
 unsigned char getPortAddress(unsigned char port)
 {
@@ -214,6 +406,56 @@ int getchar()
 	return UART1Receive();
 }
 
+static inline void slowClock()
+{
+
+	// change timer3 freq
+	setTimer3Prescaler(480 * SYS_CLK_DIV / 32);
+
+	SAFE_MOD = 0x55;
+	SAFE_MOD = 0xAA;
+	CLOCK_CFG &= ~MASK_SYS_CK_DIV; // div = 32
+
+	SAFE_MOD = 0xFF;
+}
+
+static inline void restoreClock()
+{
+	SAFE_MOD = 0x55;
+	SAFE_MOD = 0xAA;
+	CLOCK_CFG |= SYS_CLK_DIV; // restore clock to 48MHz
+	SAFE_MOD = 0xFF;
+
+	// restore timer3 freq
+	setTimer3Prescaler(480);
+}
+
+void syncSof()
+{
+	UIF_HST_SOF = 0;
+	slowClock();
+	while (UIF_HST_SOF == 0)
+	{
+		// delayUs(50);
+		continue;
+	}
+	restoreClock();
+}
+
+__xdata uint16_t slowClockDuration;
+
+void delayUsLong(__data unsigned short n_divided)
+{
+	TR0 = 0;
+	slowClock();
+
+	delayUsShort(n_divided);
+
+	restoreClock();
+
+	TR0 = 1;
+}
+
 /*******************************************************************************
 * Function Name  : delayUs(UNIT16 n)
 * Description    : us
@@ -221,7 +463,7 @@ int getchar()
 * Output         : None
 * Return         : None
 *******************************************************************************/ 
-void	delayUs(unsigned short n)
+void	delayUsShort(__data unsigned short n)
 {
 	while (n) 
 	{  // total = 12~13 Fsys cycles, 1uS @Fsys=12MHz
@@ -305,7 +547,7 @@ void	delayUs(unsigned short n)
 * Output         : None
 * Return         : None
 *******************************************************************************/
-void delay(unsigned short n)
+void delay(__data unsigned short n)
 {
 	while (n) 
 	{

@@ -9,53 +9,29 @@
 #include "config.h"
 
 uint8_t __xdata uartRxBuff[64];
-uint8_t __xdata rxPos = 0;
+static uint8_t __xdata rxPos = 0;
 
-
-void processUart(){
+void CH559UART0Interrupt(void) __interrupt INT_NO_UART0 __using 1
+{
 	while (RI)
 	{
 		RI = 0;
 		uartRxBuff[rxPos] = SBUF;
-		if (uartRxBuff[rxPos] == '\n' || rxPos >= 64)
+		rxPos++;
+		if (rxPos >= 64)
 		{
-			// for (uint8_t i = 0; i < rxPos; i++)
-			// {
-			// 	printf("0x%02X ", uartRxBuff[i]);
-			// }
-			// printf("\n");
-			if (uartRxBuff[0] == 'k')
-			{
-				//if(uartRxBuff[1]==0x61)LED=0;
-				//if(uartRxBuff[1]==0x73)LED=1;
-				if (uartRxBuff[1] == 'b')
-				{
-					uninitClock();
-					runBootloader();
-				}
-				else if (uartRxBuff[1] == 'r')
-				{
-					SAFE_MOD = 0x55;
-					SAFE_MOD = 0xaa;
-					GLOBAL_CFG |= bSW_RESET;
-				}
-			}
-			else if (uartRxBuff[0] & 0x80)
-			{
-				sendHidOutReport((uartRxBuff[0] & 0x60) >> 3,
-					(uartRxBuff[0]) & 0x1F);
-			}
 			rxPos = 0;
 		}
-		else
-		{
-			rxPos++;
-		}
+	}
+
+	if (TI)
+	{
+		TI = 0;
 	}
 }
 
 #ifndef USB_PROTOCOL_DEBUG
-#define sendByte(b) UART0Send(b)
+#define sendByte(b) { /*UART0Send(b);*/ sendSPI0(b); }
 #else
 #define sendByte(b) 
 #endif
@@ -84,7 +60,7 @@ void SendSLIP(uint8_t b)
 	}
 }
 
-#define SendSLIPEnd() sendByte(END)
+void SendSLIPEnd() { sendByte(END); }
 
 void sendProtocolMSG(unsigned char msgtype, unsigned short length, unsigned char type, unsigned char device, unsigned char endpoint, unsigned char __xdata *msgbuffer){
     unsigned short i;
@@ -122,4 +98,56 @@ void sendHidPollMSG(unsigned char msgtype, unsigned short length, unsigned char 
 		SendSLIP(msgbuffer[i]);
 	}
 	SendSLIPEnd();
+}
+
+static void processCommand(uint8_t *dat, uint8_t len)
+{
+	if (dat[0] == 'k')
+	{
+		//if(dat[1]==0x61)LED=0;
+		//if(dat[1]==0x73)LED=1;
+		if (dat[1] == 'b')
+		{
+			turnOffDummyLoad();
+			uninitClock();
+			runBootloader();
+		}
+		else if (dat[1] == 'r')
+		{
+			SAFE_MOD = 0x55;
+			SAFE_MOD = 0xaa;
+			GLOBAL_CFG |= bSW_RESET;
+		}
+	}
+	else if (dat[0] == 'l' && len > 2)
+	{
+		setTMR3TimeOut(dat[1]);
+	}
+	else if (dat[0] & 0x80)
+	{
+		const uint8_t dev = (dat[0] & 0x60) >> 5;
+		sendHidOutReport(dev, (dat[0]) & 0x1F);
+	}
+}
+
+void processUart()
+{
+	if (rxPos > 0 && uartRxBuff[rxPos - 1] == '\n')
+	{
+		processCommand(uartRxBuff, rxPos);
+		rxPos = 0;
+	}
+}
+
+void processSPI()
+{
+	uint8_t dat[3];
+	dat[0] = recvSPI0();
+	dat[1] = recvSPI0();
+	dat[2] = recvSPI0();
+
+	if (dat[0] < 0xfe)
+	{
+		processCommand(dat, 3);
+	}
 }

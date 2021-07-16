@@ -24,7 +24,7 @@ REM del %project_name%.mem
 REM del %project_name%.ihx
 
 del *.asm
-del *.lst
+REM del *.lst
 del *.rel
 del *.rst
 del *.sym
