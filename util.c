@@ -18,7 +18,11 @@ void initClock()
 	CLOCK_CFG |= bOSC_EN_XT;
 
 	// wait stable oscillation
-	delay(10);
+	// Do not use delayUsLong
+	for (int i = 0; i < 10; i++)
+	{
+		delayUsShort(1000);
+	}
 
     SAFE_MOD = 0x55;
     SAFE_MOD = 0xAA;
@@ -26,7 +30,11 @@ void initClock()
 	// switch to external oscillator
 	CLOCK_CFG &= ~(bOSC_EN_INT);
 
-	delay(10);
+	// Do not use delayUsLong
+	for (int i = 0; i < 10; i++)
+	{
+		delayUsShort(1000);
+	}
 
     SAFE_MOD = 0x55;
     SAFE_MOD = 0xAA;
