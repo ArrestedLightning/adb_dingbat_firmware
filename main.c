@@ -114,11 +114,20 @@ void main()
         SCS = 1;
         DISABLE_SPI0_CLK();
 
+#ifndef KEYBOARD_QUANTIZER_REV4
+        // CH559 sleeps periodically to reduce power consumption on Keyboard Quantizer B.
+        //
+        // Note:
+        // If CH559 continues to return NAK to USB devices for an extended period of time due to sleep,
+        // input events will be dropped on devices with large data transfer volumes, such as a high-DPI mouse.
+        // To avoid this problem, the wired version (Keyboard Quantizer rev4) will handle events as much as possible without sleep.
+
         uint16_t tcnt = TL0 | (TH0 << 8);
         uint16_t t = (tcnt >> 2) + slowClockDuration;
 
         if (t < 920) {
             delayUs(920 - t);
         }
+#endif
     }
 }
