@@ -5,6 +5,7 @@ typedef unsigned char __xdata UINT8X;
 typedef unsigned char  __data UINT8D;
 
 #include "globals.h"
+static unsigned char cycle_count = 0;
 
 void main()
 {
@@ -25,5 +26,9 @@ void main()
         processUart();
         s = checkRootHubConnections();
         pollHIDdevice();
+        cycle_count += 1;
+        if (cycle_count == 255) {
+          LED_2 = !LED_2;
+        }
     }
 }
