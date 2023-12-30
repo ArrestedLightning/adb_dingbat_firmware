@@ -19,8 +19,9 @@ $(PROJECTNAME).ihx: main.rel util.rel USBHost.rel uart.rel
 
 $(PROJECTNAME).bin: $(PROJECTNAME).ihx
 	makebin -p $^ $@
+	cat $(PROJECTNAME).mem
 
-%.rel: %.c
+%.rel: %.c globals.h util.h config.h USBHost.h
 	$(CC) $(CFLAGS) -c $<
 
 

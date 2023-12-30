@@ -31,7 +31,11 @@ void CH559UART0Interrupt(void) __interrupt INT_NO_UART0 __using 1
 }
 
 #ifndef USB_PROTOCOL_DEBUG
-#define sendByte(b) { /*UART0Send(b);*/ sendSPI0(b); }
+#ifdef USE_SPI0
+#define sendByte(b) { sendSPI0(b); }
+#else
+#define sendByte(b) { UART0Send(b); }
+#endif
 #else
 #define sendByte(b) 
 #endif
@@ -108,7 +112,6 @@ static void processCommand(uint8_t *dat, uint8_t len)
 		//if(dat[1]==0x73)LED=1;
 		if (dat[1] == 'b')
 		{
-			turnOffDummyLoad();
 			uninitClock();
 			runBootloader();
 		}
@@ -139,6 +142,7 @@ void processUart()
 	}
 }
 
+#ifdef USE_SPI0
 void processSPI()
 {
 	uint8_t dat[3];
@@ -151,3 +155,4 @@ void processSPI()
 		processCommand(dat, 3);
 	}
 }
+#endif

@@ -1,13 +1,10 @@
-#include "CH559.h"
-#include "util.h"
-#include "config.h"
-#include "uart.h"
+#include "globals.h"
 
 FunctionReference runBootloader = (FunctionReference)0xF400;
 
 #ifndef FREQ_SYS
 #define	FREQ_SYS	48000000
-#endif 
+#endif
 
 void initClock()
 {
@@ -40,7 +37,7 @@ void initClock()
     SAFE_MOD = 0xAA;
 
 	CLOCK_CFG &= ~MASK_SYS_CK_DIV;
-	CLOCK_CFG |= SYS_CLK_DIV; 															  
+	CLOCK_CFG |= SYS_CLK_DIV;
 	PLL_CFG = ((PLL_MULT << 0) | (USB_CLK_DIV << 5)) & 255;
 
     SAFE_MOD = 0xFF;
@@ -73,12 +70,12 @@ void uninitClock()
 }
 
 /**
- * Initialize UART0 port with given boud rate
+ * Initialize UART0 port with given baud rate
  * pins: tx = P3.1 rx = P3.0
  * alt != 0 pins: tx = P0.2 rx = P0.3
  */
 
-void initUART0(unsigned long baud, int alt)
+void initUART0(unsigned long baud, unsigned char alt)
 {
 	unsigned long x;
 	if(alt)
@@ -95,17 +92,17 @@ void initUART0(unsigned long baud, int alt)
 	REN = 1;
    //RCLK = 0;
     //TCLK = 0;
-    PCON |= SMOD;
+    PCON |= SMOD;//UART Fast Mode
     x = (((unsigned long)FREQ_SYS / 8) / baud + 1) / 2;
 
-    TMOD = TMOD & ~ bT1_GATE & ~ bT1_CT & ~ MASK_T1_MOD | bT1_M1;
+    TMOD = MASK_T1_MOD & (bT1_M1 | ~bT1_M0);
     T2MOD = T2MOD | bTMR_CLK | bT1_CLK;
     TH1 = (256 - x) & 255;
     TR1 = 1;
-	TI = 1;
+    TI = 1;
 
 	// Enable serial interrupt
-	ES = 1;
+	//ES = 1;
 	EA = 1;
 }
 
@@ -119,9 +116,10 @@ unsigned char UART0Receive()
 void UART0Send(unsigned char b)
 {
     SBUF = b;
-	while (!TI);
+    while (!TI);
+    TI = 0;
 }
-
+#ifdef USE_UART1
 void initUART1(unsigned long baud)
 {
 	// Allow access to RBR, THR, IER, ADR
@@ -137,8 +135,8 @@ void initUART1(unsigned long baud)
 	SER1_DIV = 1;
 	unsigned short div = (FREQ_SYS / 8) / SER1_DIV / baud;
 
-	SER1_DLL = div & 0xFF; 
-	SER1_DLM = (div >> 8) & 0xFF; 
+	SER1_DLL = div & 0xFF;
+	SER1_DLM = (div >> 8) & 0xFF;
 
 	// enable FIFO
 	SER1_FCR = bFCR_FIFO_EN;
@@ -170,7 +168,9 @@ void UART1Send(unsigned char b)
 	// Send to FIFO
 	SER1_THR = b;
 }
+#endif
 
+#ifdef USE_SPI0
 void initSPI0()
 {
 	ENABLE_SPI0_CLK();
@@ -207,7 +207,18 @@ uint8_t recvSPI0()
 	}
 	return SPI0_DATA;
 }
+#endif
 
+void initPins(void) {
+  //Start with LEDs turned off (active low)
+  LED_1 = 1;
+  LED_2 = 1;
+  LED_3 = 1;
+  LED_4 = 1;
+
+  P4_DIR = (1 << LED_2_PIN) | (1 << LED_3_PIN);
+
+}
 /**
 * #define PIN_MODE_INPUT 0
 * #define PIN_MODE_INPUT_PULLUP 1
@@ -219,61 +230,61 @@ uint8_t recvSPI0()
  */
 void pinMode(unsigned char port, unsigned char pin, unsigned char mode)
 {
-	volatile unsigned char *dir[] = {&P0_DIR, &P1_DIR, &P2_DIR, &P3_DIR};
-	volatile unsigned char *pu[] = {&P0_PU, &P1_PU, &P2_PU, &P3_PU};
+	volatile unsigned char *dir[] = {&P0_DIR, &P1_DIR, &P2_DIR, &P3_DIR, &P4_DIR};
+	volatile unsigned char *pu[] = {&P0_PU, &P1_PU, &P2_PU, &P3_PU, &P4_PU};
 	switch (mode)
 	{
 	case PIN_MODE_INPUT: //Input only, no pull up
-		PORT_CFG &= ~(bP0_OC << port);
+	  if (port < 4) {
+	    PORT_CFG &= ~(bP0_OC << port);
+	  }
 		*dir[port] &= ~(1 << pin);
 		*pu[port] &= ~(1 << pin);
 		break;
 	case PIN_MODE_INPUT_PULLUP: //Input only, pull up
-		PORT_CFG &= ~(bP0_OC << port);
+	  if (port < 4) {
+	    PORT_CFG &= ~(bP0_OC << port);
+	  }
 		*dir[port] &= ~(1 << pin);
 		*pu[port] |= 1 << pin;
 		break;
 	case PIN_MODE_OUTPUT: //Push-pull output, high and low level strong drive
-		PORT_CFG &= ~(bP0_OC << port);
-		*dir[port] |= ~(1 << pin);
+	  if (port < 4) {
+	    PORT_CFG &= ~(bP0_OC << port);
+	  }
+		*dir[port] |= 1 << pin;
 		break;
 	case PIN_MODE_OUTPUT_OPEN_DRAIN: //Open drain output, no pull-up, support input
-		PORT_CFG |= (bP0_OC << port);
+	  if (port < 4) {
+	    PORT_CFG |= (bP0_OC << port);
+	  }
 		*dir[port] &= ~(1 << pin);
 		*pu[port] &= ~(1 << pin);
 		break;
 	case PIN_MODE_OUTPUT_OPEN_DRAIN_2CLK: //Open-drain output, no pull-up, only drives 2 clocks high when the transition output goes from low to high
-		PORT_CFG |= (bP0_OC << port);
+	  if (port < 4) {
+	    PORT_CFG |= (bP0_OC << port);
+	  }
 		*dir[port] |= 1 << pin;
 		*pu[port] &= ~(1 << pin);
 		break;
 	case PIN_MODE_INPUT_OUTPUT_PULLUP: //Weakly bidirectional (standard 51 mode), open drain output, with pull-up
-		PORT_CFG |= (bP0_OC << port);
+	  if (port < 4) {
+	    PORT_CFG |= (bP0_OC << port);
+	  }
 		*dir[port] &= ~(1 << pin);
 		*pu[port] |= 1 << pin;
 		break;
 	case PIN_MODE_INPUT_OUTPUT_PULLUP_2CLK: //Quasi-bidirectional (standard 51 mode), open-drain output, with pull-up, when the transition output is low to high, only drives 2 clocks high
-		PORT_CFG |= (bP0_OC << port);
+	  if (port < 4) {
+	    PORT_CFG |= (bP0_OC << port);
+	  }
 		*dir[port] |= 1 << pin;
 		*pu[port] |= 1 << pin;
 		break;
 	default:
 		break;
 	}
-}
-
-static void turnOnDummyLoad()
-{
-	// turn on dummy load at P4.5
-	P4_OUT &= ~(1 << 5);
-	P4_DIR |= (1 << 5);
-}
-
-void turnOffDummyLoad()
-{
-	// turn off dummy load at P4.5
-	P4_PU &= ~(1 << 5);
-	P4_DIR &= ~(1 << 5);
 }
 
 static void turnOffTimer3Clock() {
@@ -339,7 +350,6 @@ void CH559TIMER3Interrupt(void) __interrupt INT_NO_TMR3 __using 2
 
 	if (s_timeout_100ms == s_turn_off_100ms)
 	{
-		turnOffDummyLoad();
 	}
 	else if (s_timeout_100ms == 0)
 	{
@@ -374,13 +384,13 @@ void setTMR3TimeOut(uint8_t turn_off_100ms)
 	if (s_timeout_100ms > 0) {
 		tmr3Start();
 
-		turnOnDummyLoad();
-
-		// send message dummy load start
-		sendProtocolMSG(MSG_TYPE_DUMMY_LOAD, 0x00, 1, s_timeout_100ms, s_turn_off_100ms, 0);
+//		turnOnDummyLoad();
+//
+//		// send message dummy load start
+//		sendProtocolMSG(MSG_TYPE_DUMMY_LOAD, 0x00, 1, s_timeout_100ms, s_turn_off_100ms, 0);
 	} else {
 		// send message dummy load stop
-		sendProtocolMSG(MSG_TYPE_DUMMY_LOAD, 0x00, 0, 0, 0, 0);
+//		sendProtocolMSG(MSG_TYPE_DUMMY_LOAD, 0x00, 0, 0, 0, 0);
 	}
 }
 
@@ -402,7 +412,7 @@ unsigned char digitalRead(unsigned char port, unsigned char pin)
 
 int putchar(int c)
 {
-#ifndef USB_PROTOCOL_DEBUG
+#ifdef USE_UART1
 	UART1Send(c);
 #else
 	UART0Send(c);
@@ -410,9 +420,13 @@ int putchar(int c)
     return c;
 }
 
-int getchar() 
+int getchar()
 {
+#ifdef USE_UART1
 	return UART1Receive();
+#else
+	return UART0Receive();
+#endif
 }
 
 static inline void slowClock()
@@ -471,10 +485,10 @@ void delayUsLong(__data unsigned short n_divided)
 * Input          : UNIT16 n
 * Output         : None
 * Return         : None
-*******************************************************************************/ 
+*******************************************************************************/
 void	delayUsShort(__data unsigned short n)
 {
-	while (n) 
+	while (n)
 	{  // total = 12~13 Fsys cycles, 1uS @Fsys=12MHz
 		++ SAFE_MOD;  // 2 Fsys cycles, for higher Fsys, add operation here
 #ifdef	FREQ_SYS
@@ -558,7 +572,7 @@ void	delayUsShort(__data unsigned short n)
 *******************************************************************************/
 void delay(__data unsigned short n)
 {
-	while (n) 
+	while (n)
 	{
 		delayUs(1000);
 		--n;

@@ -1,4 +1,4 @@
-//add your personal defines here 
+//add your personal defines here
 #pragma once
 
 #define MAJOR_VER 0x01
@@ -14,7 +14,7 @@
 #define UART_BAUDRATE 115200
 
 #define USB_H0_DISABLED
-// #define DEBUG_ENABLE
+#define DEBUG_ENABLE
 
 // Output debug message through UART0(atmega32u4)
 // #define USB_PROTOCOL_DEBUG
