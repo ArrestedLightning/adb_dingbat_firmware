@@ -59,7 +59,7 @@ void uninitClock()
     SAFE_MOD = 0xAA;
 
 	// restore initial value
-	CLOCK_CFG = (1 << 7) | (0b11000); 															  
+	CLOCK_CFG = (unsigned char)(1 << 7) | (0b11000);
 	PLL_CFG = 0b11011000;
 
     SAFE_MOD = 0xFF;
@@ -407,6 +407,7 @@ int putchar(int c)
 #else
 	UART0Send(c);
 #endif
+    return c;
 }
 
 int getchar() 
